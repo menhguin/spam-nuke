@@ -31,10 +31,11 @@ SENDER INFORMATION:
 - Company name: [COMPANY_NAME] (if identified)
 - Date received: [DATE_RECEIVED]
 
-VIOLATION DETAILS:
-- Unsolicited commercial email (no prior relationship, no consent)
-- [No opt-out mechanism / Opt-out not honored / Misleading subject]
-- [No physical address included — CAN-SPAM violation]
+POLICY / VIOLATION DETAILS (keep only the lines the evidence supports):
+- Unsolicited commercial email to an address that never opted in
+  (purchased, scraped or enriched list — prohibited by most acceptable use policies)
+- [Opt-out sent on DATE, mail continued after 10 business days]
+- [No working opt-out / no physical postal address / misleading subject / forged headers]
 
 EVIDENCE:
 The complete original email with full headers is attached/included below.
@@ -48,7 +49,36 @@ Regards,
 [YOUR_NAME]
 ```
 
-**Why this works:** ESPs are legally and contractually obligated to investigate abuse reports. Multiple reports trigger automated review. Account suspension is common.
+**Why this works:** ESPs send many customers' mail from shared infrastructure, so one customer's complaints hurt everyone's deliverability. Their acceptable-use policies (usually banning purchased/scraped lists, stricter than the law) are enforced on complaint rates; repeated reports lead to review and termination. Expect no reply.
+
+## 1b. Mailbox Provider Abuse Report (Google Workspace / Microsoft 365)
+
+For cold email sent from Workspace/M365 seats on a lookalike domain (detected by `parse-headers.py` / `recon.sh`). Google monitors `abuse@<domain>` on every Workspace domain, so this goes to **`abuse@<sending-domain>`**; for Microsoft, `abuse@outlook.com`. Attach the original as `message/rfc822`.
+
+```
+Subject: Abuse report — unsolicited bulk email from [SENDING_DOMAIN] (Google Workspace)
+
+To the abuse team,
+
+The Google Workspace account(s) below are being used to send unsolicited
+commercial email in violation of the Google Workspace Acceptable Use Policy
+("unsolicited mass email"). I never opted in and have no relationship with
+the sender.
+
+SENDING ADDRESS(ES): [FROM_ADDRESSES]
+SENDING DOMAIN:      [SENDING_DOMAIN]  (registered [DOMAIN_CREATED]; appears to
+                     be a lookalike of [BRAND_DOMAIN])
+SEQUENCER:           [e.g. Instantly — tracking host inst.SENDING_DOMAIN]
+DATES RECEIVED:      [DATES]
+
+The original message(s) with full headers are attached.
+
+[DISCLOSURE]
+
+Regards,
+[YOUR_NAME]
+[YOUR_EMAIL]
+```
 
 ## 2. Domain Registrar Abuse Report
 
@@ -76,7 +106,7 @@ Regards,
 [YOUR_NAME]
 ```
 
-**Why this works:** ICANN-accredited registrars must investigate abuse. Repeated complaints can lead to domain suspension — costly to recover.
+**Why this works:** ICANN-accredited registrars must keep an abuse contact and investigate reports (Registrar Accreditation Agreement §3.18). Expect fast action on phishing and malware; for plain unsolicited marketing, suspension is less common, so the report mainly adds to the domain's record.
 
 ## 3. Hosting Provider Abuse Report
 
@@ -130,16 +160,16 @@ File at https://reportfraud.ftc.gov — web form only, no API.
 - How contacted: Email
 - Date: [DATE]
 - Details to include:
-  - No prior business relationship
-  - No opt-in consent given
-  - [List specific CAN-SPAM violations]
+  - No prior business relationship, never opted in (context — NOT itself a CAN-SPAM violation; CAN-SPAM is opt-out)
+  - The specific violations below that the message actually shows
+  - Opt-out date and dates of later messages, if applicable
 
-**CAN-SPAM violations to cite (each up to $51,744/email):**
-- § 7704(a)(1): No opt-out mechanism provided
-- § 7704(a)(2): Misleading header information (From address doesn't identify sender)
-- § 7704(a)(5): No valid physical postal address
-- § 7704(a)(3): Deceptive subject line
-- § 7704(a)(4): Failed to identify as advertisement
+**CAN-SPAM violations to cite** (15 U.S.C. § 7704; each violating email up to $53,088 — 2025 level, inflation-adjusted each January). Cite only what's present:
+- § 7704(a)(1): Materially false or misleading header/transmission information (forged From, untraceable or misleading sender domain, falsified routing)
+- § 7704(a)(2): Deceptive subject heading
+- § 7704(a)(3): No functioning return address or opt-out mechanism
+- § 7704(a)(4): Sent more than 10 business days after an opt-out ← strongest
+- § 7704(a)(5)(A): Missing clear identification as an advertisement (absent consent), opt-out notice, or valid physical postal address
 
 Also forward the spam to: **spam@uce.gov** (FTC's spam collection inbox)
 
@@ -176,8 +206,11 @@ LEGAL BASIS:
   legal basis under Article 6 GDPR.
 - The respondent failed to obtain consent required under Article 13 of the
   ePrivacy Directive (2002/58/EC) for unsolicited electronic marketing.
-- Legitimate interest (Art. 6(1)(f)) cannot apply as there is no prior
-  relationship and no reasonable expectation of marketing contact.
+- [If an objection/opt-out was sent:] I objected to direct marketing on
+  [DATE] (Art. 21(2)-(3) GDPR); processing for direct marketing must stop
+  on objection, yet messages continued on [DATES].
+- [Note: B2B email to a work address is treated differently across member
+  states. Keep the ePrivacy line only where it applies.]
 
 EVIDENCE:
 [ATTACH THE SPAM EMAIL WITH FULL HEADERS]
@@ -216,6 +249,21 @@ contact.
 ```
 
 FCC path: Phone → "Unwanted calls/texts" → "All other unwanted calls/messages"; international numbers go in "Additional Information". If money was lost, use ReportFraud.ftc.gov instead of DoNotCall.gov.
+
+## 6c. Opt-out Request (identifiable, real companies only)
+
+Under CAN-SPAM, the cleanest violation is mail *after* an opt-out. Send this once via the `List-Unsubscribe` mailto/one-click if present, otherwise as a reply. Log the date in the ledger. **Never** use this with scams or phishing.
+
+```
+Subject: Remove [YOUR_EMAIL] from all mailings
+
+Please remove [YOUR_EMAIL] from all of your mailing lists and sequences,
+including those of any affiliates or vendors sending on your behalf, and do
+not sell or transfer it. This is an opt-out request under 15 U.S.C. 7704(a)(4)
+[and an objection to direct marketing under GDPR Art. 21, where applicable].
+
+[YOUR_NAME]
+```
 
 ## 7. Enrichment Provider Data Deletion (GDPR/CCPA)
 

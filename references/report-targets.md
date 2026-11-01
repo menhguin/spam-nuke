@@ -4,9 +4,39 @@ Abuse endpoints, filing URLs and instructions for each target in the spam-nuke c
 
 > Abuse addresses and form URLs change. Treat this as a starting point: confirm the current contact on the provider's own abuse/trust page or via https://www.abuse.net before sending, and update this file when one has moved.
 
+For *why* each layer matters and what a report there costs the sender, see `supply-chain.md`.
+
+## Mailbox Providers (where most cold email actually comes from)
+
+Modern cold email is sent from Google Workspace / Microsoft 365 seats on lookalike domains, not from an ESP. `parse-headers.py` and `recon.sh` (MX) detect this.
+
+| Provider | How to report | Notes |
+|---|---|---|
+| **Google Workspace** (custom domain) | Forward the original (as attachment) to **`abuse@<sending-domain>`**. Google monitors `abuse@` and `postmaster@` on every Workspace domain | [Google's own statement](https://knowledge.workspace.google.com/admin/gmail/spam-and-abuse-policy-in-gmail): it may suspend the user, or the whole Workspace account if the problem is domain-wide. AUP bans "unsolicited mass email" and reselling end-user accounts |
+| **Gmail** (consumer) | https://support.google.com/mail/contact/abuse | Paste full headers |
+| **Outlook.com / Hotmail / Live** | Forward with full headers to `abuse@outlook.com` | For Microsoft 365 tenants Microsoft may reply redirecting you to a tenant-abuse address — follow it |
+| **Zoho Mail** | abuse@zohocorp.com | |
+| **Your own client** | Gmail "Report spam" (or move to Spam); Outlook "Report → Junk" | Gmail: reporting *or moving to Spam* sends Google a copy. Feeds the sender's domain reputation (Gmail wants senders under 0.1% reported-spam rate, never 0.3%) |
+
+## Sequencer Fingerprints (from tracking links)
+
+Sequencers drive the mailboxes above; they show up in click/open-tracking links. A custom tracking subdomain CNAMEs to the platform. `parse-headers.py` resolves these automatically.
+
+| Platform | Tracking fingerprint | Abuse contact |
+|---|---|---|
+| **Instantly** | `inst.<domain>` → CNAME `prox.itrackly.com`; shared tracking host `*.inreg1.com` | support@instantly.ai |
+| **Smartlead** | `<host>.<domain>` → CNAME `open.sleadtrack.com` | support@smartlead.ai |
+| **lemlist** | `trail.` / `route.` / `lemtrail.` subdomain → CNAME `custom.lemlist.com` | support@lemlist.com |
+| **Apollo** | Custom tracking subdomain (value unique per account) | support@apollo.io (+ privacy@apollo.io for deletion) |
+| **Mailchimp** | `*.list-manage.com` links | abuse@mailchimp.com |
+| **HubSpot** | `*.hubspotlinks.com` links | abuse@hubspot.com |
+| **SendGrid** | `*.ct.sendgrid.net` links / CNAME to `sendgrid.net` | abuse@sendgrid.com |
+
+An unrecognised CNAME target: search for it — vendors document their tracking CNAME in their help centre. Add it to this table and to `SEQUENCER_CNAME_TARGETS` in `parse-headers.py`.
+
 ## ESP Abuse Teams
 
-Report with full email headers attached. Most ESPs will investigate within 24-48h and may suspend the sender's account.
+Report with full email headers attached. ESPs send many customers' mail from shared IPs, so their acceptable-use policies (usually banning purchased/scraped lists — stricter than the law) are enforced on complaint rates. Expect no reply; the effect is on the account.
 
 | ESP | Abuse Contact | Notes |
 |-----|--------------|-------|
@@ -40,10 +70,9 @@ Report with full email headers attached. Most ESPs will investigate within 24-48
 
 | Service | Submission URL/Method | Impact Level |
 |---------|----------------------|-------------|
-| **SpamCop** | https://www.spamcop.net — create account, submit via email parsing | High — feeds into many blocklists |
-| **Spamhaus SBL** | https://submit.spamhaus.org — submit evidence | Critical — SBL listing blocks mail at most major providers |
-| **Spamhaus DBL** | Domain blocklist — submitted alongside SBL | Critical — domain-level block |
-| **SURBL** | http://www.surbl.org — domain URI blocklist | High — blocks links in email bodies |
+| **SpamCop** | https://www.spamcop.net — create account, submit via email parsing | High — auto-reports to the source network's abuse contact; SCBL listings are automated and short-lived (expire ~24h after reports stop) |
+| **Spamhaus SBL/DBL** | https://submit.spamhaus.org — Spamhaus submission portal (free account); submit the IP and the domains (sending + linked) | Critical — used by most major mail systems. Spamhaus lists on its own evidence; a submission is evidence, not an order |
+| **SURBL** | http://www.surbl.org — domain URI blocklist | High — matches domains linked in email bodies (this is how the *brand* domain gets hit) |
 | **URIBL** | https://uribl.com — URI blocklist | High |
 | **Barracuda BRBL** | https://www.barracudacentral.org/lookups — report via lookup tool | Medium |
 | **Abusix** | https://www.abusix.com — report via their platform | Medium |
@@ -57,18 +86,21 @@ Report with full email headers attached. Most ESPs will investigate within 24-48
 
 | Agency | Filing URL | Applicable Law | When to Use |
 |--------|-----------|---------------|------------|
-| **FTC** | https://reportfraud.ftc.gov (+ forward to spam@uce.gov) | CAN-SPAM Act | Any commercial email to US recipient without opt-out, with misleading headers, or without physical address |
+| **FTC** | https://reportfraud.ftc.gov (+ forward to spam@uce.gov) | CAN-SPAM Act, FTC Act §5 | Commercial email that actually violates CAN-SPAM (checklist below) or is deceptive. Reports go into Consumer Sentinel, shared with 2,000+ law enforcers |
 | **FTC (calls)** | https://www.donotcall.gov/report.html | Telemarketing Sales Rule | Unwanted sales calls / robocalls where no money was lost |
 | **FCC** | https://consumercomplaints.fcc.gov | TCPA | Unsolicited calls and texts (Phone → "Unwanted calls/texts") |
-| **State AG** | Varies by state | State anti-spam laws | CA, WA, VA have strong laws. Search "[state] attorney general consumer complaint" |
+| **State AG** | Varies by state | State anti-spam laws | CA (B&P §17529.5) and WA (CEMA) are strongest and give recipients a private right of action. Search "[state] attorney general consumer complaint" |
 | **IC3** | https://www.ic3.gov | If phishing/fraud involved | Only for fraudulent emails, not just spam |
 
-**CAN-SPAM violation checklist** (each is a separate violation, up to $51,744 per email):
-- No opt-out mechanism
-- Misleading "From" or "Subject" line
+**CAN-SPAM is an opt-out law: unsolicited commercial email is *not* a violation by itself.** Cite only what the message shows (each violating email: up to $53,088, the 2025 level, inflation-adjusted every January; advertiser and sender can both be liable):
+- False or misleading header information (From, Reply-To, routing, sender domain)
+- Deceptive subject line
+- No working opt-out mechanism
+- Opt-out not honored within 10 business days ← the strongest, cleanest evidence; see the opt-out tactic in `supply-chain.md`
 - No valid physical postal address
-- Doesn't identify message as an ad (if applicable)
-- Opt-out not honored within 10 business days
+- Not identified as an advertisement (unless the recipient consented)
+
+Recipients can't sue under CAN-SPAM (email providers can); state laws (CA, WA) fill that gap for falsity/deception.
 
 ### European Union / EEA
 
@@ -76,19 +108,20 @@ Report with full email headers attached. Most ESPs will investigate within 24-48
 |-----------|-----------|------------|
 | **Local DPA** | https://edpb.europa.eu/about-edpb/about-edpb/members_en (directory) | Sender or recipient in EU. File with sender's country DPA. |
 | **noyb.eu** | https://noyb.eu/en/exercise-your-rights-article-77-complain-your-dpa | Templates and guidance for GDPR complaints |
-| **ICO (UK)** | https://ico.org.uk/make-a-complaint | UK-nexus senders/recipients |
+| **ICO (UK)** | https://ico.org.uk/make-a-complaint | UK-nexus senders/recipients. PECR: individuals/sole traders need consent; **corporate addresses can lawfully get B2B cold email** with sender ID + opt-out — don't complain about compliant B2B mail to a work address |
 
 **GDPR complaint elements:**
-- Cite Article 77 GDPR + Article 13 ePrivacy Directive
-- No consent obtained for direct marketing (Article 6 — no legal basis)
-- No prior business relationship (legitimate interest defense fails)
+- Cite Article 77 GDPR (right to complain) + the national ePrivacy rule (Art. 13 ePrivacy Directive): email marketing to individuals needs prior consent, with a "soft opt-in" only for existing customers
+- B2B varies by member state (Germany strict; some allow cold email to corporate addresses) — check the sender's/recipient's country before asserting a violation
+- Art. 21(2)–(3): an objection to direct marketing is absolute; mail after an objection is the cleanest violation
+- Art. 15: you can demand the source of your data (often reveals the enrichment vendor)
 - Include: sender identity, your data processed, evidence (the email), dates
 
 ### Canada
 
 | Authority | Filing URL | When to Use |
 |-----------|-----------|------------|
-| **CRTC (CASL)** | https://fightspam.gc.ca | Sender or recipient in Canada |
+| **Spam Reporting Centre (CASL)** | https://www.fightspam.gc.ca/src | Sender or recipient in Canada. CASL is consent-based incl. B2B (implied-consent exceptions apply); penalties up to C$10M per violation for businesses |
 
 ### Australia
 
@@ -160,10 +193,12 @@ If identifiable (from tracking pixels, link domains, or enrichment data):
 
 ### Data Enrichment Providers
 
-If you can identify how they got your email:
+Usually invisible — infer from the sender type (B2B SaaS → Apollo/ZoomInfo/Lusha are the usual suspects) and ask the sender for the source (GDPR Art. 15). Deletion requests are legitimate even without proof of source.
+
 
 | Provider | Abuse/Compliance Contact |
 |----------|-------------------------|
+| **California DROP** (all registered brokers at once) | https://privacy.ca.gov/drop/ — California residents; one request reaches 600+ registered data brokers, processed every 45 days from Aug 2026 |
 | **Apollo.io** | privacy@apollo.io — request data deletion + report |
 | **ZoomInfo** | privacy@zoominfo.com |
 | **Clearbit (HubSpot)** | privacy@clearbit.com |
@@ -180,11 +215,11 @@ For all enrichment providers: file a **data deletion request** under GDPR/CCPA i
 
 ### Payment Processors
 
-Nuclear option — only if the spammer is a commercial product you can identify the payment flow for:
+The chokepoint for scam/affiliate storefronts selling goods directly (merchant accounts are scarce and slow to replace — Levchenko et al. 2011). Irrelevant for B2B SaaS cold outreach:
 
 | Provider | How to Report |
 |----------|--------------|
-| **Stripe** | https://stripe.com/legal/report-fraud — report for facilitating unsolicited commercial communication |
+| **Stripe** | https://stripe.com/legal/report-fraud — report a fraudulent or deceptive merchant |
 | **PayPal** | https://www.paypal.com/disputes — report if payment/invoice involved |
 
 ## Phishing / Fraud (in addition to the above)
@@ -210,6 +245,7 @@ Gather per call/message: caller-ID number (even if spoofed), the number that rec
 | **FCC** | https://consumercomplaints.fcc.gov → Phone → "Unwanted calls/texts" → "All other unwanted calls/messages" | International numbers go in "Additional Information". Used for enforcement, not individual resolution |
 | **Do Not Call Registry** | https://www.donotcall.gov (register/verify) | Confirm the emailed link within 72h. Sales robocalls without written consent are illegal regardless |
 | **Carrier** | Forward spam texts to **7726** ("SPAM"); block + report in the phone/carrier spam tool | 7726 works on all major US carriers |
+| **Voice / messaging provider (CPaaS)** | Carrier lookup on the number (e.g. Twilio Lookup API or any free carrier-lookup site) → that provider's abuse desk. **Twilio:** https://www.twilio.com/en-us/help/abuse or stopspam@twilio.com. Bandwidth, Telnyx, Sinch, Vonage, Plivo: their own abuse pages | Only for real (non-spoofed) numbers. Providers answer to carriers and FCC rules (Robocall Mitigation Database, traceback); they cut off abusive customers fast |
 | **State AG** | Varies by state | Repeat offenders; strong telemarketing laws in e.g. FL, OK, WA |
 
 ### Canada
@@ -253,6 +289,6 @@ If the spammer also reached out on LinkedIn or is identifiable there:
 
 ## Google-Specific
 
-- **Gmail "Report spam" button** — trains Google's filters
+- **Gmail "Report spam" button** (or moving the message to Spam, incl. via API/IMAP) — Google receives a copy; feeds filters and the sender domain's reputation
 - **Google Safe Browsing** — https://safebrowsing.google.com/safebrowsing/report_badware/ — if their landing page is deceptive
 - **Google Ads** — If they run ads, report via https://support.google.com/ads/troubleshooter/4578507

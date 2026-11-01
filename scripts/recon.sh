@@ -29,7 +29,8 @@ if command -v whois >/dev/null 2>&1; then
     echo "Abuse Email: ${ABUSE_EMAIL:-[not found]}"
     echo "Abuse Phone: ${ABUSE_PHONE:-[not found]}"
     echo "Domain Created: ${CREATION:-[not found]}"
-    echo "(A domain created in the last few weeks is a strong burner signal.)"
+    echo "(Created in the last few weeks/months + a lookalike name = likely a burner sending domain."
+    echo " Report it, but also find the BRAND domain in the email's links and run recon on that too.)"
 else
     echo "[whois not installed — use https://lookup.icann.org/en/lookup?name=$DOMAIN]"
 fi
@@ -56,8 +57,17 @@ echo "### NS Records (DNS provider)"
 dig +short NS "$DOMAIN" 2>/dev/null || echo "[dig failed]"
 echo ""
 
-echo "### MX Records (email receiving)"
-dig +short MX "$DOMAIN" 2>/dev/null || echo "[dig failed]"
+echo "### MX Records (email receiving — also reveals the mailbox provider)"
+MX=$(dig +short MX "$DOMAIN" 2>/dev/null || true)
+echo "${MX:-[no MX record]}"
+if printf '%s' "$MX" | grep -qi 'google\.com\|googlemail\.com'; then
+    echo "  ✓ Mailboxes on Google Workspace → report to abuse@$DOMAIN (Google monitors abuse@/postmaster@"
+    echo "    on every Workspace domain) + https://support.google.com/mail/contact/abuse"
+elif printf '%s' "$MX" | grep -qi 'outlook\.com\|protection\.outlook'; then
+    echo "  ✓ Mailboxes on Microsoft 365 → report to abuse@outlook.com (Microsoft may redirect tenant abuse)"
+elif printf '%s' "$MX" | grep -qi 'zoho'; then
+    echo "  ✓ Mailboxes on Zoho → abuse@zohocorp.com"
+fi
 echo ""
 
 echo "### SPF Record (authorized senders — key for identifying sending platforms)"

@@ -1,16 +1,48 @@
 # spam-nuke
 
-An agent skill that turns "do something about this spam" into reports filed through every legitimate channel in the sender's supply chain.
+An agent skill that maps a spammer's entire supply chain (mailboxes, sending platform, domains, lead vendor, voice carrier, regulators) and reports them to every layer of it. **Every channel it uses is an official one:** abuse desks, blocklists, carrier traceback and regulators that exist specifically to receive these reports. No hacking, no harassment, no gray areas.
 
-- **Email and cold outreach:** the sending platform's abuse desk (SendGrid, Instantly, Apollo, Mailgun, …), registrar, host, Spamhaus/SpamCop, regulators (FTC, EU DPAs, ICO, CASL, ACMA, PDPC), and a data-deletion request to the enrichment vendor that sold your address.
-- **Spam calls and texts:** FTC DoNotCall.gov reports, FCC complaints, 7726 forwarding, Do Not Call registration, and national regulators (CRTC, ICO/TPS, ACMA, ScamShield/PDPC).
-- **Phishing:** APWG, Safe Browsing and registrar/host takedown requests.
+## Why: a dark forest for spammers
 
-It works with any agent that can read a `SKILL.md` and doesn't assume particular tools. The agent uses whatever it has: mail access to pull raw messages and send abuse reports, a browser for government web forms, a shell for DNS/WHOIS, and phone or messaging access for call logs and forwarding texts. When it can't reach a channel, it writes the filled-in draft and adds it to your checklist.
+Spam runs on an asymmetry. Sending is nearly free, and fighting back costs the recipient an hour of header-reading, WHOIS lookups and web forms. So almost nobody fights back, and the expected cost of hitting any one inbox is roughly zero.
 
-## Install
+Agents remove the recipient's cost. With this skill, "nuke this spammer" takes one sentence. Spammers can't tell which inboxes have an agent behind them, so every message they send becomes a lottery ticket for an expensive event:
 
-Clone it into your agent's skills directory:
+- a suspended Google Workspace tenant and weeks of mailbox warmup lost
+- a terminated sending-platform account
+- their **brand** domain on Spamhaus, which hurts all their mail, invoices included
+- a traceback that gets their voice carrier cut off from the US phone network
+- a regulator file with their name on it, or statutory damages per message
+
+```
+expected cost per message = P(recipient is armed) × cost of a full-stack response
+```
+
+Agents raise P. Hitting the whole supply chain, instead of one throwaway address, raises the cost. Past a certain point the rational move for senders is the one from Liu Cixin's *Dark Forest*: don't reveal yourself. In practice that means only emailing or calling people who opted in.
+
+This works because the systems already exist. Abuse desks, Spamhaus, the FCC's traceback machinery and the FTC's complaint database all have thresholds and penalties built in. What they've been short of is input. It also only works if reports are **accurate**, which is why the skill is strict about evidence (see below).
+
+The full layer-by-layer reasoning, with sources, is in [`references/supply-chain.md`](references/supply-chain.md).
+
+## The supply chain it hits
+
+| Layer | Official channel | What a report costs the sender |
+|---|---|---|
+| Lead vendor that sold your address | GDPR/CCPA deletion, California DROP | You disappear from every future buyer's list |
+| Lookalike sending domains | Registrar abuse, Spamhaus DBL / SURBL / URIBL | Weeks of warmup wasted per burned domain |
+| Google Workspace / M365 mailboxes | `abuse@<domain>` (Google monitors it), "Report spam" | Seat or whole-tenant suspension |
+| Sequencer / ESP (Instantly, Smartlead, SendGrid…) | Platform abuse desk | Account termination; their rules are stricter than the law |
+| Brand domain (in links and signature) | Domain blocklists | Months of reputation; affects all their mail |
+| Robocall voice carrier | FTC/FCC complaints → Industry Traceback Group | Removal from the FCC Robocall Mitigation Database: every US carrier must refuse its traffic |
+| Caller-ID numbers | DoNotCall.gov reports (shared daily with carriers) | "Spam Likely" labels; answer rate collapses |
+| Texting platform (Twilio, Bandwidth…) | Platform abuse, 7726 | Campaign or number suspension |
+| The company | FTC, FCC, state AGs, EU DPAs, ICO, CASL, ACMA, PDPC | Aggregated into enforcement; per-message penalties |
+
+It covers **email** (cold outreach, spam, phishing), **calls** (robocalls, voicemail) and **texts**, with channels for the US, EU, UK, Canada, Australia and Singapore.
+
+## Works with any agent, any tools
+
+Any agent that can read a `SKILL.md` can use it, and it doesn't assume particular tools. The agent uses whatever it has: mail access to pull raw messages and send abuse reports, a browser for government web forms, a shell for DNS/WHOIS, and phone or messaging access for call logs and texts. If it can't reach a channel, it writes the filled-in draft and adds it to your checklist.
 
 ```bash
 # Claude Code
@@ -20,28 +52,28 @@ git clone https://github.com/menhguin/spam-nuke ~/.claude/skills/spam-nuke
 git clone https://github.com/menhguin/spam-nuke ~/.hermes/skills/spam-nuke
 ```
 
-For any other agent, put the folder wherever it loads skills from, or give it the link and say "read SKILL.md and follow it".
+For any other agent, put the folder where it loads skills from, or give it the link and say "read SKILL.md and follow it". Then say *"nuke this spammer"*, *"do something about the spam calls in my voicemail"*, or *"report this phishing text"*.
 
-Then: *"nuke this spammer"* (with an email), *"do something about the spam calls in my voicemail"*, or *"report this phishing text"*.
+## Guardrails (precision is the weapon)
 
-## What it won't do
-
-- **Report mail you signed up for.** The agent checks your inbox for prior contact first and unsubscribes instead. False positives are what teach abuse desks to ignore reports.
-- **Claim violations the evidence doesn't show,** or file the same incident twice.
-- **Contact or retaliate against the sender:** no replies, link clicks or callbacks, and nothing beyond official reports.
-- **Hide that an agent wrote it.** Every report says it was prepared by an AI agent on your behalf, with your real contact details.
-- **Send before you approve the plan,** unless you've told your agent it can file these on its own.
+- **Checks you didn't sign up.** The agent searches your inbox for prior contact first and unsubscribes instead if you opted in. False positives are what teach abuse desks to ignore reports.
+- **Claims only what the evidence shows, under the law that applies.** Example: in the US, unsolicited email isn't illegal by itself (CAN-SPAM is an opt-out law), so the agent cites real violations, or platform-policy breaches, rather than inventing them.
+- **One report per channel per incident,** tracked in a ledger. Repeat offenders get escalated, not re-spammed with reports.
+- **Never engages with scams:** no replies, link clicks or callbacks. With real, identifiable companies it may send one official opt-out, because mail after that is a clean violation.
+- **Discloses that an agent prepared each report,** with your real contact details.
+- **Asks once before sending,** unless you've told it to file on its own. Lawsuits (TCPA, California and Washington email laws) are prepared as evidence only; filing is your call.
 
 ## Contents
 
 | Path | What |
 |---|---|
-| `SKILL.md` | The workflow the agent follows: triage, then the email, calls and texts workflows |
-| `scripts/parse-headers.py` | Email header analysis: sending-platform fingerprint (30+), sending IPs, SPF/DKIM/DMARC, company confidence score. Python 3 standard library only |
-| `scripts/recon.sh` | DNS/WHOIS supply-chain map: registrar, host, DNS, SPF includes, DKIM. Needs `dig` and `whois` |
-| `references/report-targets.md` | Abuse contacts, blocklists and regulators by country (email, phishing, calls, texts) |
-| `references/report-formats.md` | Report templates: email platform (ARF-style), registrar, host, FTC, GDPR, phone complaint, data deletion |
+| `SKILL.md` | The agent's workflow: dark-forest rationale, supply-chain map, ground rules, triage, then the email, calls and texts workflows and the ledger |
+| `references/supply-chain.md` | Each layer in depth: what it is, its official channel, what a report does, what it costs the sender, and where reports don't bite |
+| `references/report-targets.md` | Abuse contacts, blocklists, regulators by country, and sequencer tracking fingerprints |
+| `references/report-formats.md` | Templates: platform, mailbox provider, registrar, host, FTC, GDPR, opt-out, data deletion, phone complaints |
+| `scripts/parse-headers.py` | Email analysis: mailbox provider (Workspace/M365), ESP, sequencer via tracking-link CNAMEs, brand vs sending domain, IPs, SPF/DKIM/DMARC. Python 3 standard library |
+| `scripts/recon.sh` | DNS/WHOIS map: registrar and abuse contact, domain age, MX provider, host, SPF platforms, DKIM. Needs `dig` and `whois` |
 
-Abuse addresses and form URLs move, so the agent is told to confirm each one before sending. PRs with updated contacts are welcome.
+Abuse addresses and form URLs move, so the agent confirms each one before sending. PRs with updated contacts or new sequencer fingerprints are welcome.
 
 MIT licensed.

@@ -1,16 +1,21 @@
 #!/usr/bin/env python3
 """
-parse-headers.py — Extract sending infrastructure from raw email headers.
-Usage: parse-headers.py <headers-file>
-       echo "<headers>" | parse-headers.py -
+parse-headers.py — Extract a spammer's sending infrastructure from a raw email.
+Usage: parse-headers.py [--no-dns] <message.eml>
+       cat message.eml | parse-headers.py [--no-dns] -
 
-Identifies: ESP, sending IPs, domains, authentication results, and abuse contacts.
+Identifies: mailbox provider (Google Workspace / Microsoft 365 / Gmail / Outlook),
+ESP fingerprint, sequencer (via tracking-link CNAMEs, needs `dig` unless --no-dns),
+link hosts, sending IPs, authentication results, company confidence, abuse contacts.
+Python 3 standard library only.
 """
 
 import sys
 import re
 import email
 import ipaddress
+import shutil
+import subprocess
 from email.policy import default as default_policy
 
 ESP_SIGNATURES = {
@@ -50,6 +55,125 @@ ESP_SIGNATURES = {
 }
 
 
+# Sequencers / platforms identified from tracking-link hosts.
+# CNAME targets come from each vendor's own custom-tracking-domain setup docs.
+SEQUENCER_CNAME_TARGETS = {
+    "prox.itrackly.com": ("Instantly", "support@instantly.ai"),
+    "open.sleadtrack.com": ("Smartlead", "support@smartlead.ai"),
+    "custom.lemlist.com": ("lemlist", "support@lemlist.com"),
+    "sendgrid.net": ("SendGrid", "abuse@sendgrid.com"),
+    "mailgun.org": ("Mailgun", "abuse@mailgun.com"),
+}
+# Shared (non-custom) tracking hosts that name the platform directly.
+SEQUENCER_HOST_PATTERNS = {
+    "inreg1.com": ("Instantly (shared tracking domain)", "support@instantly.ai"),
+    "itrackly.com": ("Instantly", "support@instantly.ai"),
+    "sleadtrack.com": ("Smartlead", "support@smartlead.ai"),
+    "lemlist.com": ("lemlist", "support@lemlist.com"),
+    "list-manage.com": ("Mailchimp", "abuse@mailchimp.com"),
+    "hubspotlinks.com": ("HubSpot", "abuse@hubspot.com"),
+    "klclick": ("Klaviyo", "compliance@klaviyo.com"),
+    "ct.sendgrid.net": ("SendGrid", "abuse@sendgrid.com"),
+}
+# Hostname prefixes vendors use for custom tracking subdomains (inst., smart., …).
+TRACKING_PREFIXES = ("inst.", "smart.", "emailtracking.", "track.", "tracking.",
+                     "link.", "links.", "click.", "clicks.", "go.", "trail.",
+                     "route.", "lemtrail.", "email.", "em.", "url.", "t.")
+
+GOOGLE_CONSUMER = {"gmail.com", "googlemail.com"}
+MS_CONSUMER = {"outlook.com", "hotmail.com", "live.com", "msn.com"}
+
+URL_HOST_RE = re.compile(r"https?://([A-Za-z0-9][A-Za-z0-9.-]*\.[A-Za-z]{2,})", re.I)
+
+
+def _collect_bodies(msg) -> tuple:
+    """Return (plain_text, html_text) concatenated across all parts."""
+    plain, html = [], []
+    parts = msg.walk() if msg.is_multipart() else [msg]
+    for part in parts:
+        ct = part.get_content_type()
+        if ct not in ("text/plain", "text/html"):
+            continue
+        try:
+            content = part.get_content()
+        except Exception:
+            payload = part.get_payload(decode=True) or b""
+            content = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else str(payload)
+        (plain if ct == "text/plain" else html).append(content or "")
+    return "\n".join(plain), "\n".join(html)
+
+
+def _extract_link_hosts(*texts) -> list:
+    hosts = []
+    for t in texts:
+        for h in URL_HOST_RE.findall(t or ""):
+            h = h.lower().rstrip(".")
+            if h not in hosts:
+                hosts.append(h)
+    return hosts[:40]
+
+
+def _dig_cname(host: str) -> str:
+    try:
+        out = subprocess.run(["dig", "+short", "CNAME", host], capture_output=True,
+                             text=True, timeout=6).stdout.strip()
+        return out.splitlines()[0].rstrip(".").lower() if out else ""
+    except Exception:
+        return ""
+
+
+def detect_sequencers(link_hosts: list, use_dns: bool) -> list:
+    """Identify the sending platform behind tracking links."""
+    found = []
+    can_dig = use_dns and shutil.which("dig") is not None
+    for host in link_hosts:
+        hit = None
+        for pat, (name, abuse) in SEQUENCER_HOST_PATTERNS.items():
+            if pat in host:
+                hit = {"host": host, "via": f"host contains {pat}", "name": name, "abuse": abuse}
+                break
+        if not hit and can_dig and host.startswith(TRACKING_PREFIXES):
+            target = _dig_cname(host)
+            if target:
+                for t, (name, abuse) in SEQUENCER_CNAME_TARGETS.items():
+                    if target == t or target.endswith("." + t):
+                        hit = {"host": host, "via": f"CNAME → {target}", "name": name, "abuse": abuse}
+                        break
+                if not hit:
+                    hit = {"host": host, "via": f"CNAME → {target}", "name": None,
+                           "abuse": "unknown — search the CNAME target to identify the platform"}
+        if hit and hit not in found:
+            found.append(hit)
+    return found
+
+
+def detect_mailbox_provider(msg, from_domain: str, dkim_domains: list) -> dict:
+    """Detect whether the message was sent from Google or Microsoft mailboxes.
+
+    Only sender-side evidence counts: the recipient's own provider adds its own
+    headers, so match the *sending* hop (Received: from mail-*.google.com /
+    *.outbound.protection.outlook.com) and the sender's DKIM, not X-MS-Exchange-*.
+    """
+    received = " ".join(msg.get_all("Received", []) or [])
+    google = bool(re.search(r"from mail-[\w-]+\.google\.com", received, re.I)) \
+        or msg.get("X-Gm-Message-State") is not None
+    microsoft = bool(re.search(r"from \S+\.outbound\.protection\.outlook\.com", received, re.I)) \
+        or any(d.lower().endswith(".onmicrosoft.com") for d in dkim_domains)
+    if google:
+        if from_domain in GOOGLE_CONSUMER:
+            return {"provider": "Gmail (consumer account)",
+                    "abuse": "https://support.google.com/mail/contact/abuse"}
+        return {"provider": "Google Workspace (custom domain)",
+                "abuse": f"abuse@{from_domain} (Google monitors abuse@/postmaster@ on every Workspace domain) "
+                         f"+ https://support.google.com/mail/contact/abuse"}
+    if microsoft:
+        if from_domain in MS_CONSUMER:
+            return {"provider": "Outlook.com (consumer account)", "abuse": "abuse@outlook.com"}
+        return {"provider": "Microsoft 365 tenant",
+                "abuse": "abuse@outlook.com (Microsoft may redirect tenant abuse — follow its reply)"}
+    return {}
+
+
 def _is_public_ip(ip: str) -> bool:
     try:
         addr = ipaddress.ip_address(ip)
@@ -59,7 +183,7 @@ def _is_public_ip(ip: str) -> bool:
                 or addr.is_reserved or addr.is_unspecified)
 
 
-def parse_headers(raw: str) -> dict:
+def parse_headers(raw: str, use_dns: bool = True) -> dict:
     """Parse raw email headers and extract infrastructure info."""
     # Try parsing as full email first, fall back to headers-only
     msg = email.message_from_string(raw, policy=default_policy)
@@ -151,6 +275,29 @@ def parse_headers(raw: str) -> dict:
             result["body_snippet"] = msg.get_content()[:1000] if hasattr(msg, 'get_content') else ""
         except Exception:
             result["body_snippet"] = msg.get_payload(decode=True, errors="replace")[:1000] if msg.get_payload() else ""
+
+    # Full bodies (text + HTML) for link hosts; HTML-only mail gets a text snippet too
+    plain, html = _collect_bodies(msg)
+    if not result["body_snippet"] and html:
+        result["body_snippet"] = html[:3000]  # raw HTML keeps href URLs for body signals
+    result["link_hosts"] = _extract_link_hosts(plain, html)
+    result["sequencers"] = detect_sequencers(result["link_hosts"], use_dns)
+
+    from_match = re.search(r"@([\w.-]+)", result["from"] or "")
+    from_domain = from_match.group(1).lower() if from_match else ""
+    result["mailbox_provider"] = detect_mailbox_provider(msg, from_domain, result["dkim_domains"])
+    result["from_domain"] = from_domain
+    platform_markers = tuple(SEQUENCER_HOST_PATTERNS) + tuple(SEQUENCER_CNAME_TARGETS) + (
+        "google.com", "gmail.com", "outlook.com", "microsoft.com", "linkedin.com", "calendly.com",
+        "zoom.us", "youtube.com", "twitter.com", "x.com", "facebook.com", "instagram.com")
+    def _base(h):  # approximate registrable domain (last two labels)
+        return ".".join(h.split(".")[-2:])
+    result["other_link_domains"] = []
+    for h in result["link_hosts"]:
+        b = _base(h)
+        if b != _base(from_domain or "x.invalid") and not any(m in h for m in platform_markers) \
+                and b not in result["other_link_domains"]:
+            result["other_link_domains"].append(b)
 
     # Company identification with confidence scoring
     result["company_id"] = identify_company(result)
@@ -343,6 +490,32 @@ def format_report(info: dict) -> str:
             lines.append(f"    Matched: {esp['matched_on']}")
         lines.append("")
 
+    mp = info.get("mailbox_provider") or {}
+    if mp:
+        lines.append("## MAILBOX PROVIDER (sending side)")
+        lines.append(f"  ✓ {mp['provider']}")
+        lines.append(f"    Report to: {mp['abuse']}")
+        lines.append("")
+
+    if info.get("sequencers"):
+        lines.append("## SENDING PLATFORM FROM TRACKING LINKS")
+        for s in info["sequencers"]:
+            label = s["name"] or "[unrecognised]"
+            lines.append(f"  ✓ {label}  ({s['host']}, {s['via']})")
+            lines.append(f"    Abuse: {s['abuse']}")
+        lines.append("")
+
+    if info.get("link_hosts"):
+        lines.append("## LINK HOSTS IN BODY (candidates for SURBL/URIBL/Spamhaus DBL; brand domain is usually here)")
+        for h in info["link_hosts"]:
+            lines.append(f"  - {h}")
+        if info.get("other_link_domains"):
+            lines.append(f"  Sending domain: {info.get('from_domain') or '[unknown]'}. Linked domains that differ "
+                         f"(likely the BRAND domain if the sender is a lookalike): "
+                         f"{', '.join(info['other_link_domains'])}")
+            lines.append("  → Run recon.sh on both; report the brand domain to the blocklists too.")
+        lines.append("")
+
     if info["x_headers"]:
         lines.append("## X-Headers (notable)")
         for k, v in info["x_headers"].items():
@@ -362,17 +535,19 @@ def format_report(info: dict) -> str:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: parse-headers.py <headers-file>")
-        print("       echo '<headers>' | parse-headers.py -")
+    args = [a for a in sys.argv[1:] if a != "--no-dns"]
+    use_dns = "--no-dns" not in sys.argv[1:]
+    if len(args) < 1:
+        print("Usage: parse-headers.py [--no-dns] <message.eml>")
+        print("       cat message.eml | parse-headers.py [--no-dns] -")
         sys.exit(1)
 
-    source = sys.argv[1]
+    source = args[0]
     if source == "-":
         raw = sys.stdin.read()
     else:
         with open(source, "r") as f:
             raw = f.read()
 
-    info = parse_headers(raw)
+    info = parse_headers(raw, use_dns=use_dns)
     print(format_report(info))

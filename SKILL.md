@@ -64,13 +64,17 @@ If you can't reach a channel, write the filled-in draft and put it on the user's
 
 ## Modes: really careful → a bit careful → sicko mode
 
-Pick the mode from the user's words ("be careful", "just do it", "sicko mode", "go ham", "nuke everything"). If they don't say, use **a bit careful**. On a user's **first ever run** (no ledger yet), suggest **really careful** for that run.
+**First run** (no ledger yet): before anything else, state the three choices in one line each and ask which one they want:
+
+> How hands-on do you want to be? **🧐 Really careful:** you approve every report word for word. **🙂 A bit careful:** I show spam in batches of 10, most certain first, and report them unless you say otherwise. **😈 Sicko mode:** I sweep everything and file it all, then send you a digest.
+
+Later runs: use the mode recorded in the ledger, or the user's words ("be careful", "just do it", "sicko mode", "go ham"). If the user doesn't pick, or just says "go", use **a bit careful**.
 
 **Same in every mode:** ground rules 1–5. Check the user didn't sign up, claim only what the evidence shows, file one report per channel per incident, never engage scams, and disclose that an agent prepared each report. Never report a sender the user has a relationship with. Never file a lawsuit or send a legal threat.
 
 | | 🧐 **Really careful** | 🙂 **A bit careful** (default) | 😈 **Sicko mode** |
 |---|---|---|---|
-| **What needs the user's OK** | Every outgoing report, shown word for word | One card per email or operation; bulk replies OK ("report 1–5, skip 6") | Nothing. Pre-authorized, with a digest afterwards |
+| **What needs the user's OK** | Every outgoing report, shown word for word | Nothing per item. Batches of 10, most-likely-spam first, one-line blurb each; **reported by default** unless the user excludes them ("skip 3 7", "unsub 5") | Nothing. Pre-authorized, with a digest afterwards |
 | **Scope** | Only the emails or calls the user pointed at | Those, or a sweep of the Spam folder or voicemail | The whole Spam folder and voicemail, and new spam as it arrives if you have a scheduler |
 | **Triage** | Nothing skipped automatically; risks are flagged on the card | Prior relationship, newsletter or retail signals, or LOW confidence → "probably subscribed: unsubscribe instead?" list | Same filters. Anything that isn't high-confidence B/C/C2/D goes to a review queue, not filed |
 | **Channels** | Platform-embedded abuse links, platform or ESP abuse desk, mailbox provider, "Report spam" | + blocklists, registrar, host, Reply-To inbox provider, data-deletion requests | + regulators (spam@uce.gov, ReportFraud, FTC/FCC for calls, national regulators), SpamCop, automatic escalation for repeat offenders (state AG, second-tier providers), California DROP |
@@ -79,14 +83,22 @@ Pick the mode from the user's words ("be careful", "just do it", "sicko mode", "
 | **Volume guard** | n/a | n/a | At most ~50 outbound report emails a day from the user's account, spaced out, so their own mailbox doesn't get flagged for bulk-forwarding spam. Web forms: one per incident |
 | **Afterwards** | Ledger | Ledger | Ledger + a digest: what was filed and where, what got queued for review, what was skipped and why |
 
-**Review card** (really careful and a bit careful): run `python3 scripts/parse-headers.py --card [--gmail-id ID] message.eml` and add the recon results. Each card has:
+**A bit careful: the batch view.** Run `python3 scripts/triage.py --prior prior.json [--ids ids.json] [--page N] *.eml`. Build `prior.json` first by searching the user's mailbox: for each sender domain, count mail outside Spam and mail the user sent to it. The script then:
+- **sorts by how likely each email is to be spam** (a 0–100 heuristic with reasons: impersonation, forged domains, a Reply-To on another domain, hacked-host scams, scam/phishing/predatory-academic wording, cold-email sequencers; minus for compliant newsletters, personal one-off senders and retail wording);
+- shows **10 at a time**, each with a one-line blurb: category, score, sender, subject, an **open** link, why it looks like spam, and where it would be reported;
+- ends each batch with: *"I'll report all N unless you say otherwise: `skip 3 7`, `unsub 5` (you signed up), `details 2` (full card), or `stop`."* Any reply that doesn't exclude an item counts as yes for it, e.g. "go" or just "skip 4". The next batch follows.
+- lists, after the last batch, what it is **not** reporting by default: "unsure" items (score under 40) and anything the user has had mail with (offered as `unsub` instead). `report N` moves one up.
+
+Silence is not consent: if nobody replies (e.g. an unattended scheduled run), nothing is filed in this mode. Scores only set the order and the default. The ground rules still apply to every item, and the user's reply is the final call.
+
+**Review card** (really careful, or `details N`): run `python3 scripts/parse-headers.py --card [--gmail-id ID] message.eml` and add the recon results. Each card has:
 - subject, sender, a link to open the original, and a ~200-character intro so the user can recognise it at a glance;
 - what was found at each layer and the reports you'd file;
 - prior-relationship evidence;
 - your category call and confidence;
 - the choice: report / skip / unsubscribe instead.
 
-Group emails from the same operation (shared sending account or Reply-To) into one card. In **really careful** mode, also show the exact text of each outgoing report before it goes. Open every review with:
+Group emails from the same operation (shared sending account or Reply-To) into one card. In **really careful** mode, also show the exact text of each outgoing report before it goes. Open every review and every batch with:
 
 > ⚠️ Every report goes out in your name to real abuse teams. Reporting mail you actually signed up for, or a real contact, is a false positive: it wastes their time, weakens genuine reports, and can hurt a legitimate sender. If unsure, skip it or unsubscribe instead.
 
@@ -182,4 +194,5 @@ Save confirmation emails and screenshots alongside the ledger. Re-check in about
 | `references/report-formats.md` | Report templates: platform abuse (ARF-style), mailbox provider, registrar, host, FTC, GDPR, opt-out, data deletion, phone complaints. |
 | `scripts/parse-headers.py` | Header analysis: verified sending server (trust boundary), mailbox provider, ESP and sequencer fingerprints, Reply-To mismatch, brand vs sending domain, payloads on abused platforms, phishing flags, authentication results, company confidence score. Python 3 standard library; uses `dig` if available. |
 | `scripts/recon.sh` | DNS/WHOIS supply-chain map for a domain: registrar, abuse contact, domain age, MX provider, host, SPF platforms, DKIM, blocklist status. Needs `dig` and `whois`; runs on macOS bash 3.2 and Linux. |
+| `scripts/triage.py` | "A bit careful" batch view: spam-likelihood ranking with reasons, batches of 10, one-line blurbs with open links, report-by-default wording, unsure / probably-subscribed list. Uses `parse-headers.py`. |
 | `scripts/check-lists.sh` | Read-only blocklist status for domains (Spamhaus DBL, SURBL, URIBL) and IPs (Spamhaus ZEN, SpamCop). Distinguishes "not listed" from "query refused". Use it before filing and again ~2 weeks later. |

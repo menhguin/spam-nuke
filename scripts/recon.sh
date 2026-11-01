@@ -24,11 +24,20 @@ if command -v whois >/dev/null 2>&1; then
     REGISTRAR=$(printf '%s\n' "$WHOIS_OUT" | grep -i "^ *registrar:" | head -1 | sed 's/^[^:]*: *//')
     ABUSE_EMAIL=$(printf '%s\n' "$WHOIS_OUT" | grep -i "abuse.*email" | head -1 | sed 's/^[^:]*: *//')
     ABUSE_PHONE=$(printf '%s\n' "$WHOIS_OUT" | grep -i "abuse.*phone" | head -1 | sed 's/^[^:]*: *//')
-    CREATION=$(printf '%s\n' "$WHOIS_OUT" | grep -i "creation date\|created" | head -1 | sed 's/^[^:]*: *//')
+    # Prefer the registry's "Creation Date:"; the IANA header's "created: 1985-01-01" is the TLD's, not the domain's
+    CREATION=$(printf '%s\n' "$WHOIS_OUT" | grep -i "creation date:" | head -1 | sed 's/^[^:]*: *//')
+    [ -z "$CREATION" ] && CREATION=$(printf '%s\n' "$WHOIS_OUT" | sed -n '/^refer:/,$p' | grep -iv "^created: *1985" | grep -i "^ *created:\|registered on:\|registration time:" | head -1 | sed 's/^[^:]*: *//')
     echo "Registrar: ${REGISTRAR:-[not found]}"
     echo "Abuse Email: ${ABUSE_EMAIL:-[not found]}"
     echo "Abuse Phone: ${ABUSE_PHONE:-[not found]}"
     echo "Domain Created: ${CREATION:-[not found]}"
+    if [ -n "$CREATION" ]; then
+        CY=$(printf '%s' "$CREATION" | grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
+        if [ -n "$CY" ]; then
+            AGE_DAYS=$(python3 -c "import datetime as d,sys; print((d.date.today()-d.date.fromisoformat(sys.argv[1])).days)" "$CY" 2>/dev/null || echo "")
+            [ -n "$AGE_DAYS" ] && echo "Domain Age: ${AGE_DAYS} days$([ "$AGE_DAYS" -lt 365 ] 2>/dev/null && echo '  ⚠️  under a year old')"
+        fi
+    fi
     echo "(Created in the last few weeks/months + a lookalike name = likely a burner sending domain."
     echo " Report it, but also find the BRAND domain in the email's links and run recon on that too.)"
 else
@@ -137,6 +146,10 @@ EOF
 else
     echo "  [no SPF record]"
 fi
+echo ""
+
+echo "## Blocklist status (read-only)"
+bash "$(dirname "$0")/check-lists.sh" "$DOMAIN" 2>/dev/null | grep -E "^  " || echo "  [check-lists.sh unavailable]"
 echo ""
 
 echo "## Abuse contact aggregator"

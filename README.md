@@ -71,8 +71,9 @@ For any other agent, put the folder where it loads skills from, or give it the l
 | `references/supply-chain.md` | Each layer in depth: what it is, its official channel, what a report does, what it costs the sender, and where reports don't bite |
 | `references/report-targets.md` | Abuse contacts, blocklists, regulators by country, and sequencer tracking fingerprints |
 | `references/report-formats.md` | Templates: platform, mailbox provider, registrar, host, FTC, GDPR, opt-out, data deletion, phone complaints |
-| `scripts/parse-headers.py` | Email analysis: mailbox provider (Workspace/M365), ESP, sequencer via tracking-link CNAMEs, brand vs sending domain, IPs, SPF/DKIM/DMARC. Python 3 standard library |
-| `scripts/recon.sh` | DNS/WHOIS map: registrar and abuse contact, domain age, MX provider, host, SPF platforms, DKIM. Needs `dig` and `whois` |
+| `scripts/parse-headers.py` | Email analysis: verified sending server (forged-header boundary), mailbox provider (Workspace/M365), ESP and sequencer fingerprints, Reply-To mismatch (the operation's persistent inbox), brand vs sending domain, payloads on abused platforms, phishing flags. Python 3 standard library |
+| `scripts/recon.sh` | DNS/WHOIS map: registrar and abuse contact, domain age, MX provider, host, SPF platforms, DKIM, blocklist status. Needs `dig` and `whois` |
+| `scripts/check-lists.sh` | Read-only blocklist status for domains and IPs (Spamhaus DBL/ZEN, SURBL, URIBL, SpamCop): before filing, and two weeks after as a success check |
 
 Abuse addresses and form URLs move, so the agent confirms each one before sending. PRs with updated contacts or new sequencer fingerprints are welcome.
 

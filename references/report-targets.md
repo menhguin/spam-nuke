@@ -6,6 +6,18 @@ Abuse endpoints, filing URLs and instructions for each target in the spam-nuke c
 
 For *why* each layer matters and what a report there costs the sender, see `supply-chain.md`.
 
+## Platform-Provided Abuse Channels (check the headers first)
+
+Sending platforms often embed their own abuse channel in the message. These are the most precise reports possible because they identify the exact account. `parse-headers.py` lists them under ★.
+
+| Header | Platform | What it gives you |
+|---|---|---|
+| `X-Mail-Abuse-Inquiries` | Instantly | Per-message report URL (`app.instantly.ai/privacy/report-abuse/<message-id>`) |
+| `X-Report-Abuse` | Mailchimp | Per-campaign report URL with account (`u=`) and campaign (`id=`) IDs |
+| `X-Report-Abuse-To` | HubSpot and others | The platform's abuse address + policy link |
+| `X-AntiAbuse` | cPanel/Exim shared hosting | Server hostname, account UID/GID, sender domain: quote verbatim to the host |
+| `Feedback-ID` / `X-Feedback-Id` | Amazon SES, Alibaba DirectMail, Mailgun, … | Identifies the sending account/campaign at the platform: include it in the platform report |
+
 ## Mailbox Providers (where most cold email actually comes from)
 
 Modern cold email is sent from Google Workspace / Microsoft 365 seats on lookalike domains, not from an ESP. `parse-headers.py` and `recon.sh` (MX) detect this.
@@ -33,6 +45,20 @@ Sequencers drive the mailboxes above; they show up in click/open-tracking links.
 | **SendGrid** | `*.ct.sendgrid.net` links / CNAME to `sendgrid.net` | abuse@sendgrid.com |
 
 An unrecognised CNAME target: search for it — vendors document their tracking CNAME in their help centre. Add it to this table and to `SEQUENCER_CNAME_TARGETS` in `parse-headers.py`.
+
+## Abused Hosting Platforms (payloads, redirectors, phishing pages)
+
+Report the **exact URL**, not the platform's domain. Add Google Safe Browsing (https://safebrowsing.google.com/safebrowsing/report_phish/) for anything deceptive; browser warnings often land faster than platform takedowns.
+
+| Platform | Report channel |
+|---|---|
+| Google Cloud Storage (`storage.googleapis.com`), Firebase, App Engine | https://support.google.com/code/contact/cloud_platform_report |
+| Google Docs / Forms / Sites | The "Report abuse" link on the page |
+| Azure Blob / Static Web (`*.core.windows.net`) | https://msrc.microsoft.com/report/abuse |
+| AWS S3 / CloudFront | abuse@amazonaws.com or the AWS abuse form |
+| Cloudflare R2 / Pages / Workers (`*.r2.dev`, `*.pages.dev`, `*.workers.dev`) | https://abuse.cloudflare.com |
+| GitHub Pages / raw.githubusercontent.com | https://github.com/contact/report-abuse |
+| Vercel / Netlify | https://vercel.com/abuse · abuse@netlify.com |
 
 ## ESP Abuse Teams
 
@@ -65,6 +91,8 @@ Report with full email headers attached. ESPs send many customers' mail from sha
 | **Reply.io** | support@reply.io | Sales engagement |
 | **Mixmax** | support@mixmax.com | Header: tracking pixels/links from mixmax |
 | **Mailshake** | support@mailshake.com | Cold outreach tool |
+| **Alibaba Cloud DirectMail** | Alibaba Cloud Reporting Center / Abuse Claim Form (linked from alibabacloud.com's legal/DSA page) | Sending host `*.dm.aliyun.com`; unsubscribe/tracking `dm-*.aliyuncs.com`. Policy bans unsolicited mail incl. cold outreach; third-party complaints can permanently ban the account |
+| **Net263 hosted mail (China)** | abuse@link263.com (per a 263 reseller page; verify) | Sending host `*.263.net`; SPF `include:spf.263.net`, MX `mx.263.net` |
 
 ## Blocklists & Spam Databases
 

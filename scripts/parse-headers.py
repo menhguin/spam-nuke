@@ -52,7 +52,62 @@ ESP_SIGNATURES = {
     "mailshake.com": ("Mailshake", "support@mailshake.com"),
     "apollo.io": ("Apollo", "support@apollo.io"),
     "freshworks.com": ("Freshworks", "support@freshworks.com"),
+    "dm.aliyun.com": ("Alibaba Cloud DirectMail",
+                      "Alibaba Cloud Reporting Center / Abuse Claim Form (DirectMail policy bans unsolicited email; "
+                      "third-party complaints can permanently ban the account)"),
+    "aliyuncs.com": ("Alibaba Cloud DirectMail",
+                     "Alibaba Cloud Reporting Center / Abuse Claim Form (DirectMail policy bans unsolicited email; "
+                     "third-party complaints can permanently ban the account)"),
+    ".263.net": ("Net263 hosted mail (China)", "abuse@link263.com (per a 263 reseller page; verify)"),
 }
+
+# Sending-server hostname (from the trusted hop) → provider
+SENDING_SERVER_PATTERNS = [
+    (r"\.dm\.aliyun\.com$", "Alibaba Cloud DirectMail"),
+    (r"\.263\.net$", "Net263 hosted mail (China)"),
+    (r"^mail-[\w-]+\.google\.com$", "Google (Gmail / Workspace)"),
+    (r"\.outbound\.protection\.outlook\.com$", "Microsoft 365 / Outlook"),
+    (r"\.amazonses\.com$", "Amazon SES"),
+    (r"\.sendgrid\.net$", "SendGrid"),
+    (r"\.mailgun\.(org|net)$", "Mailgun"),
+    (r"\.mcsv\.net$|\.mcdlv\.net$", "Mailchimp"),
+    (r"\.sparkpostmail\.com$", "SparkPost"),
+    (r"\.zoho\.com$|\.zohomail\.com$", "Zoho Mail"),
+]
+
+# Platforms abused to HOST payloads (phishing pages, redirectors). Not the spammer's brand:
+# report the exact URL to the platform's abuse channel + Google Safe Browsing.
+ABUSED_HOSTING = [
+    ("storage.googleapis.com", "Google Cloud Storage",
+     "https://support.google.com/code/contact/cloud_platform_report (+ Safe Browsing report_phish)"),
+    ("firebasestorage.googleapis.com", "Firebase Storage (Google)",
+     "https://support.google.com/code/contact/cloud_platform_report"),
+    (".web.app", "Firebase Hosting (Google)", "https://support.google.com/code/contact/cloud_platform_report"),
+    (".firebaseapp.com", "Firebase Hosting (Google)", "https://support.google.com/code/contact/cloud_platform_report"),
+    ("docs.google.com", "Google Docs/Forms", "'Report abuse' link on the document + Safe Browsing"),
+    ("forms.gle", "Google Forms", "'Report abuse' link on the form"),
+    ("sites.google.com", "Google Sites", "'Report abuse' link on the site"),
+    ("blob.core.windows.net", "Azure Blob Storage", "https://msrc.microsoft.com/report/abuse"),
+    ("web.core.windows.net", "Azure Static Web", "https://msrc.microsoft.com/report/abuse"),
+    ("amazonaws.com", "AWS (S3/other)", "abuse@amazonaws.com / AWS abuse form"),
+    ("cloudfront.net", "AWS CloudFront", "abuse@amazonaws.com / AWS abuse form"),
+    (".r2.dev", "Cloudflare R2", "https://abuse.cloudflare.com"),
+    (".pages.dev", "Cloudflare Pages", "https://abuse.cloudflare.com"),
+    (".workers.dev", "Cloudflare Workers", "https://abuse.cloudflare.com"),
+    (".github.io", "GitHub Pages", "https://github.com/contact/report-abuse"),
+    ("raw.githubusercontent.com", "GitHub", "https://github.com/contact/report-abuse"),
+    (".vercel.app", "Vercel", "https://vercel.com/abuse"),
+    (".netlify.app", "Netlify", "abuse@netlify.com"),
+    ("ipfs.", "IPFS gateway", "the gateway operator's abuse contact"),
+]
+
+# Common platforms that appear in links but are never the spammer's brand domain
+COMMON_PLATFORMS = (
+    "google.com", "gmail.com", "googleapis.com", "outlook.com", "microsoft.com", "office.com",
+    "linkedin.com", "github.com", "calendly.com", "zoom.us", "youtube.com", "youtu.be",
+    "twitter.com", "x.com", "facebook.com", "instagram.com", "t.me", "wa.me", "whatsapp.com",
+    "apple.com", "bit.ly", "aliyuncs.com", "w3.org", "schema.org", "qq.com",
+)
 
 
 # Sequencers / platforms identified from tracking-link hosts.
@@ -174,6 +229,54 @@ def detect_mailbox_provider(msg, from_domain: str, dkim_domains: list) -> dict:
     return {}
 
 
+def trusted_sending_hop(msg) -> dict:
+    """The topmost Received header with a 'from ... [IP]' clause was written by the
+    recipient's own mail server (e.g. 'by mx.google.com') — the trust boundary. Its
+    'from' host/IP is the real sending server. Everything below it is the sender's
+    own claim and can be forged."""
+    for r in msg.get_all("Received", []) or []:
+        m = re.search(r"from\s+(\S+)\s+\(([^)]*?)\[?(\d{1,3}(?:\.\d{1,3}){3})\]?\)", r)
+        if m:
+            helo, rdns_part, ip = m.group(1), m.group(2), m.group(3)
+            rdns = (rdns_part.split()[0] if rdns_part.split() else helo).rstrip(".").lower()
+            provider = None
+            for pat, name in SENDING_SERVER_PATTERNS:
+                if re.search(pat, rdns):
+                    provider = name
+                    break
+            by = re.search(r"\bby\s+(\S+)", r)
+            return {"helo": helo.rstrip(".").lower(), "rdns": rdns, "ip": ip, "provider": provider,
+                    "by": by.group(1) if by else "",
+                    "mismatch": not rdns.endswith(".".join(helo.rstrip(".").lower().split(".")[-2:]))}
+    return {}
+
+
+def abused_hosting(plain: str, html: str) -> list:
+    hits = []
+    for url in re.findall(r"https?://[^\s\"'<>)]+", (plain or "") + " " + (html or "")):
+        host = re.sub(r"^https?://", "", url).split("/")[0].lower()
+        for pat, name, channel in ABUSED_HOSTING:
+            if (pat.startswith(".") and host.endswith(pat)) or (not pat.startswith(".") and pat in host):
+                entry = {"url": url[:200], "platform": name, "report": channel}
+                if entry not in hits:
+                    hits.append(entry)
+                break
+    return hits[:15]
+
+
+def _tld_exists(domain: str) -> bool:
+    """True unless dig confirms the TLD has no NS records (e.g. '.htl')."""
+    tld = domain.rsplit(".", 1)[-1]
+    if not tld or shutil.which("dig") is None:
+        return True
+    try:
+        out = subprocess.run(["dig", "+short", "NS", tld + "."], capture_output=True, text=True,
+                             timeout=6).stdout.strip()
+        return bool(out)
+    except Exception:
+        return True
+
+
 def _is_public_ip(ip: str) -> bool:
     try:
         addr = ipaddress.ip_address(ip)
@@ -281,15 +384,52 @@ def parse_headers(raw: str, use_dns: bool = True) -> dict:
     if not result["body_snippet"] and html:
         result["body_snippet"] = html[:3000]  # raw HTML keeps href URLs for body signals
     result["link_hosts"] = _extract_link_hosts(plain, html)
-    result["sequencers"] = detect_sequencers(result["link_hosts"], use_dns)
+    unsub_hosts = _extract_link_hosts(str(result["list_unsubscribe"] or ""))
+    result["sequencers"] = detect_sequencers(
+        result["link_hosts"] + [h for h in unsub_hosts if h not in result["link_hosts"]], use_dns)
+
+    # b) Abuse channels the sending platform embedded in the message itself
+    result["abuse_headers"] = []
+    for k, v in msg.items():
+        kl = k.lower()
+        if "abuse" in kl or "complain" in kl or kl in ("feedback-id", "x-feedback-id"):
+            entry = (k, " ".join(str(v).split())[:220])
+            if entry not in result["abuse_headers"]:
+                result["abuse_headers"].append(entry)
+    result["abuse_links"] = []
+    for u in re.findall(r"https?://[^\s\"'<>)]+", (plain or "") + " " + (html or "")):
+        if re.search(r"report[-_]?abuse|abuse[-_]?report|/contact/abuse|/abuse(?:[/?]|$)", u, re.I):
+            if u[:220] not in result["abuse_links"]:
+                result["abuse_links"].append(u[:220])
 
     from_match = re.search(r"@([\w.-]+)", result["from"] or "")
     from_domain = from_match.group(1).lower() if from_match else ""
     result["mailbox_provider"] = detect_mailbox_provider(msg, from_domain, result["dkim_domains"])
     result["from_domain"] = from_domain
-    platform_markers = tuple(SEQUENCER_HOST_PATTERNS) + tuple(SEQUENCER_CNAME_TARGETS) + (
-        "google.com", "gmail.com", "outlook.com", "microsoft.com", "linkedin.com", "calendly.com",
-        "zoom.us", "youtube.com", "twitter.com", "x.com", "facebook.com", "instagram.com")
+    result["trusted_hop"] = trusted_sending_hop(msg)
+    result["abused_hosting"] = abused_hosting(plain, html)
+
+    rt = re.search(r"@([\w.-]+)", result["reply_to"] or "")
+    result["reply_to_domain"] = rt.group(1).lower() if rt else ""
+
+    # Phishing tells: display name impersonating the recipient; forged From domain
+    flags = []
+    to_addr = (msg.get("Delivered-To") or msg.get("To") or "").lower()
+    to_m = re.search(r"([\w.+-]+)@([\w.-]+)", to_addr)
+    disp = re.match(r'\s*"?([^"<]*)"?\s*<', result["from"] or "")
+    if to_m and disp:
+        name = disp.group(1).strip().lower()
+        if name and (name == to_m.group(1) or to_m.group(0) in name):
+            flags.append(f"From display name '{disp.group(1).strip()}' impersonates the recipient "
+                         f"({to_m.group(0)}) — phishing tell")
+    if from_domain and use_dns and not _tld_exists(from_domain):
+        flags.append(f"From domain '{from_domain}' uses a TLD that does not exist — the From is forged. "
+                     f"Don't report it; report the authenticated domains (DKIM d=, Return-Path) and the sending IP")
+    result["flags"] = flags
+    result["forged_from"] = any("TLD that does not exist" in f for f in flags)
+
+    platform_markers = tuple(SEQUENCER_HOST_PATTERNS) + tuple(SEQUENCER_CNAME_TARGETS) + \
+        COMMON_PLATFORMS + tuple(p for p, _, _ in ABUSED_HOSTING)
     def _base(h):  # approximate registrable domain (last two labels)
         return ".".join(h.split(".")[-2:])
     result["other_link_domains"] = []
@@ -323,7 +463,9 @@ def identify_company(info: dict) -> dict:
         from_domain = from_match.group(1).lower()
         freemail = {"gmail.com", "yahoo.com", "hotmail.com", "outlook.com",
                     "aol.com", "protonmail.com", "icloud.com", "mail.com"}
-        if from_domain not in freemail:
+        if info.get("forged_from"):
+            signals.append(f"From domain {from_domain} is forged (non-existent TLD) — ignored")
+        elif from_domain not in freemail:
             signals.append(f"From address uses company domain: {from_domain}")
             domains_seen.setdefault(from_domain, []).append("From header")
 
@@ -347,7 +489,9 @@ def identify_company(info: dict) -> dict:
         # Skip ESP signing domains
         esp_domains = {"sendgrid.net", "mailgun.org", "amazonses.com",
                        "postmarkapp.com", "mandrillapp.com"}
-        if d not in esp_domains:
+        esp_suffixes = (".aliyuncs.com", ".263.net", ".mcsv.net", ".hubspotemail.net",
+                        ".sparkpostmail.com", ".onmicrosoft.com", "gappssmtp.com")
+        if d not in esp_domains and not d.endswith(esp_suffixes):
             signals.append(f"DKIM signed by company domain: {d}")
             domains_seen.setdefault(d, []).append("DKIM signature")
 
@@ -359,8 +503,26 @@ def identify_company(info: dict) -> dict:
         # Strip common prefixes
         unsub_base = re.sub(r'^(email|mail|unsubscribe|links?|click|track)\.',
                             '', unsub_domain)
-        signals.append(f"Unsubscribe link domain: {unsub_domain}")
-        domains_seen.setdefault(unsub_base, []).append("List-Unsubscribe")
+        if unsub_base.endswith(".aliyuncs.com") or (
+                info.get("forged_from") and unsub_base.rsplit(".", 1)[-1] == from_domain.rsplit(".", 1)[-1]):
+            unsub_base = ""  # platform-hosted or same fake TLD — not a company signal
+        if unsub_base:
+            signals.append(f"Unsubscribe link domain: {unsub_domain}")
+            domains_seen.setdefault(unsub_base, []).append("List-Unsubscribe")
+
+    # Signal 4b: Reply-To domain (where replies go — often the operation's persistent inbox)
+    rt_match = re.search(r'@([\w.-]+)', info.get("reply_to", "") or "")
+    if rt_match:
+        rt_domain = rt_match.group(1).lower()
+        _base2 = lambda d: ".".join(d.split(".")[-2:])
+        if _base2(rt_domain) == _base2(from_domain):
+            pass
+        elif rt_domain not in {"gmail.com", "qq.com", "163.com", "outlook.com",
+                                                           "hotmail.com", "yahoo.com", "126.com"}:
+            signals.append(f"Reply-To uses a different domain: {rt_domain}")
+            domains_seen.setdefault(rt_domain, []).append("Reply-To")
+        else:
+            signals.append(f"Reply-To is a freemail inbox ({rt_domain}) — report the address to that provider")
 
     # Signal 5: Body mentions (company name, product, website)
     body = info.get("body_snippet", "")
@@ -371,7 +533,9 @@ def identify_company(info: dict) -> dict:
         # Skip known ESP/tracking domains
         skip = {"sendgrid.net", "mailgun.org", "google.com", "bit.ly",
                 "mailchi.mp", "hubspot.com", "salesforce.com"}
-        if url_base not in skip and not url_base.startswith("127."):
+        if url_base not in skip and not url_base.startswith("127.") \
+                and not any(url_base.endswith(c) for c in COMMON_PLATFORMS) \
+                and not any(p.strip(".") in url_base for p, _, _ in ABUSED_HOSTING):
             signals.append(f"Body contains URL: {url_domain}")
             domains_seen.setdefault(url_base, []).append("Body URL")
 
@@ -488,6 +652,51 @@ def format_report(info: dict) -> str:
             lines.append(f"  ✓ {esp['name']}")
             lines.append(f"    Abuse: {esp['abuse_contact']}")
             lines.append(f"    Matched: {esp['matched_on']}")
+        lines.append("")
+
+    if info.get("flags"):
+        lines.append("## ⚠️  FLAGS")
+        for f in info["flags"]:
+            lines.append(f"  - {f}")
+        lines.append("")
+
+    if info.get("abuse_headers") or info.get("abuse_links"):
+        lines.append("## ★ PLATFORM-PROVIDED ABUSE CHANNELS (official, account-specific — report here first)")
+        for k, v in info.get("abuse_headers", []):
+            lines.append(f"  {k}: {v}")
+        for u in info.get("abuse_links", []):
+            lines.append(f"  link: {u}")
+        lines.append("  The sending platform put these in the message for exactly this purpose. Feedback-ID /")
+        lines.append("  X-AntiAbuse values identify the exact sending account or server — quote them in every report.")
+        lines.append("")
+
+    th = info.get("trusted_hop") or {}
+    if th:
+        lines.append("## VERIFIED SENDING SERVER (trust boundary: recorded by your own mail server)")
+        lines.append(f"  {th['rdns']} [{th['ip']}]  (HELO: {th['helo']}, received by {th['by']})")
+        if th.get("provider"):
+            lines.append(f"  ✓ Sending service: {th['provider']}")
+        if th.get("mismatch"):
+            lines.append("  ⚠️  HELO name doesn't match reverse DNS — the sender lied about its hostname")
+        lines.append("  Received lines BELOW this hop are written by the sender and can be forged.")
+        lines.append(f"  IP owner/abuse: `whois {th['ip']}` (report there unless it's a big shared provider "
+                     f"like Google/Microsoft — then use the provider channel)")
+        lines.append("")
+
+    _b = lambda d: ".".join((d or "").split(".")[-2:])
+    if info.get("reply_to_domain") and _b(info.get("reply_to_domain")) != _b(info.get("from_domain")):
+        lines.append("## REPLY-TO DIFFERS FROM SENDER")
+        lines.append(f"  Replies go to: {info['reply_to']}")
+        lines.append("  Rotating sending domains + a stable Reply-To = the Reply-To inbox/domain is the operation's")
+        lines.append("  persistent asset. Run recon.sh on it, include it in blocklist reports, and if it's a")
+        lines.append("  freemail/hosted inbox (qq.com, gmail.com, …), report the address to that provider.")
+        lines.append("")
+
+    if info.get("abused_hosting"):
+        lines.append("## PAYLOAD HOSTED ON A LEGIT PLATFORM (report the exact URL; not the brand domain)")
+        for h in info["abused_hosting"]:
+            lines.append(f"  - {h['platform']}: {h['url']}")
+            lines.append(f"    Report: {h['report']}")
         lines.append("")
 
     mp = info.get("mailbox_provider") or {}

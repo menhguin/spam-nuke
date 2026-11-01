@@ -401,6 +401,11 @@ def parse_headers(raw: str, use_dns: bool = True) -> dict:
 
     # Full bodies (text + HTML) for link hosts; HTML-only mail gets a text snippet too
     plain, html = _collect_bodies(msg)
+    _vis = plain or re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html or "")
+    _vis = re.sub(r"<[^>]+>", " ", _vis)
+    _vis = re.sub(r"&nbsp;|&#160;", " ", _vis)
+    _vis = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), _vis)
+    result["intro"] = " ".join(_vis.split())[:240]
     if not result["body_snippet"] and html:
         result["body_snippet"] = html[:3000]  # raw HTML keeps href URLs for body signals
     result["link_hosts"] = _extract_link_hosts(plain, html)
@@ -766,12 +771,80 @@ def format_report(info: dict) -> str:
     return "\n".join(lines)
 
 
+def email_link(info: dict, gmail_id: str = "", account: str = "0") -> str:
+    """Link the user can click to open the original. Gmail API id if known; otherwise a
+    Gmail search on the Message-ID (works for any Gmail account, incl. Spam)."""
+    if gmail_id:
+        return f"https://mail.google.com/mail/u/{account}/#all/{gmail_id}"
+    mid = (info.get("message_id") or "").strip().strip("<>")
+    if not mid:
+        return ""
+    from urllib.parse import quote
+    return f"https://mail.google.com/mail/u/{account}/#search/{quote('in:anywhere rfc822msgid:' + mid)}"
+
+
+def format_card(info: dict, n: int = 1, link: str = "") -> str:
+    """Compact review card for manual (review) mode: one per email, for the user to approve or skip."""
+    L = []
+    frm = info.get("from") or "[no From]"
+    L.append(f"### [{n}] {info.get('subject') or '[no subject]'}")
+    L.append(f"**From:** {frm}" + (f"  ·  [open email]({link})" if link else ""))
+    if info.get("intro"):
+        L.append(f"> {info['intro'][:220]}…")
+    found = []
+    for k, v in info.get("abuse_headers", [])[:2]:
+        found.append(f"★ platform abuse channel — `{k}: {v[:110]}`")
+    seq_names = {sq["name"].split(" (")[0] for sq in info.get("sequencers", []) if sq.get("name")}
+    for sq in info.get("sequencers", [])[:2]:
+        if sq.get("name"):
+            found.append(f"sending platform: {sq['name']} (tracking host {sq['host']}) → {sq['abuse']}")
+    for e in info.get("esps_detected", [])[:2]:
+        if e["name"].split(" (")[0] not in seq_names:
+            found.append(f"sending platform: {e['name']} → {e['abuse_contact']}")
+    mp = info.get("mailbox_provider") or {}
+    if mp:
+        found.append(f"mailboxes: {mp['provider']} → {mp['abuse'].split(' (')[0]}")
+    th = info.get("trusted_hop") or {}
+    if th:
+        shared = th.get("provider") is not None
+        found.append(f"sending server: {th['rdns']} [{th['ip']}]" +
+                     (f" — {th['provider']} shared infrastructure, report via the platform above" if shared
+                      else " → IP owner's abuse contact (`whois` / recon.sh)"))
+    if info.get("reply_to_domain") and ".".join(info["reply_to_domain"].split(".")[-2:]) != \
+            ".".join((info.get("from_domain") or "").split(".")[-2:]):
+        ch = FREEMAIL_ABUSE.get(info["reply_to_domain"], "registrar + blocklists (run recon.sh)")
+        found.append(f"reply-to (persistent inbox): {info['reply_to']} → {ch}")
+    if info.get("other_link_domains"):
+        found.append(f"brand/link domain(s): {', '.join(info['other_link_domains'][:3])} → blocklists + registrar")
+    _seen_pl = set()
+    for h in info.get("abused_hosting", []):
+        if h["platform"] in _seen_pl:
+            continue
+        _seen_pl.add(h["platform"])
+        found.append(f"hosted payload: {h['platform']} ({h['url'][:70]}…) → {h['report']}")
+    if found:
+        L.append("**Supply chain found:**")
+        L.extend(f"- {x}" for x in found)
+    for f in info.get("flags", []):
+        L.append(f"- ⚠️ {f}")
+    cid = info.get("company_id") or {}
+    L.append(f"**Sender confidence:** {cid.get('confidence', 'UNKNOWN')} ({cid.get('company_domain') or 'unknown'})")
+    L.append("**Decision:** ☐ report  ☐ skip  ☐ unsubscribe instead (I signed up)")
+    return "\n".join(L)
+
+
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if a != "--no-dns"]
-    use_dns = "--no-dns" not in sys.argv[1:]
+    argv = sys.argv[1:]
+    use_dns = "--no-dns" not in argv
+    card = "--card" in argv
+    gmail_id = argv[argv.index("--gmail-id") + 1] if "--gmail-id" in argv else ""
+    args = [a for i, a in enumerate(argv) if a not in ("--no-dns", "--card", "--gmail-id")
+            and not (i > 0 and argv[i - 1] == "--gmail-id")]
     if len(args) < 1:
-        print("Usage: parse-headers.py [--no-dns] <message.eml>")
+        print("Usage: parse-headers.py [--no-dns] [--card [--gmail-id ID]] <message.eml>")
         print("       cat message.eml | parse-headers.py [--no-dns] -")
+        print("  --card        compact review card (manual/review mode) instead of the full report")
+        print("  --gmail-id    Gmail API message id, for a direct 'open email' link")
         sys.exit(1)
 
     source = args[0]
@@ -782,4 +855,7 @@ if __name__ == "__main__":
             raw = f.read()
 
     info = parse_headers(raw, use_dns=use_dns)
-    print(format_report(info))
+    if card:
+        print(format_card(info, link=email_link(info, gmail_id)))
+    else:
+        print(format_report(info))

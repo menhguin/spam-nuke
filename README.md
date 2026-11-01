@@ -61,7 +61,7 @@ For any other agent, put the folder where it loads skills from, or give it the l
 - **One report per channel per incident,** tracked in a ledger. Repeat offenders get escalated, not re-spammed with reports.
 - **Never engages with scams:** no replies, link clicks or callbacks. With real, identifiable companies it may send one official opt-out, because mail after that is a clean violation.
 - **Discloses that an agent prepared each report,** with your real contact details.
-- **Asks once before sending,** unless you've told it to file on its own. Lawsuits (TCPA, California and Washington email laws) are prepared as evidence only; filing is your call.
+- **Review mode by default.** Analysis is read-only. You get one card per email (sender, a short intro, a link to the original, what it found at each layer, the reports it would file) under a brief warning about false positives. Nothing is filed until you approve it. Auto mode applies only if you turn it on, and even then it never files regulator complaints or legal steps. Lawsuits (TCPA, California and Washington email laws) are prepared as evidence only; filing is your call.
 
 ## Contents
 

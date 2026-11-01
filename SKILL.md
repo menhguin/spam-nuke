@@ -60,7 +60,24 @@ If you can't reach a channel, write the filled-in draft and put it on the user's
 3. **One report per channel per incident.** Combine related messages into one report per recipient, and check the ledger first (see "Finish with a record"). Volume doesn't help: these systems aggregate across reporters, so duplicates only add noise and cost you credibility.
 4. **Don't engage with scams.** With scams, phishing and robocalls, never reply, click body links, load images, "press 9 to be removed" or call back; that only confirms a live target. The one exception is a **real, identifiable company**: there, the official opt-out (`List-Unsubscribe`, or a one-line removal request) is allowed and useful, because continued mail after 10 business days is a clear CAN-SPAM violation (see the opt-out tactic in `references/supply-chain.md`). Never retaliate beyond reporting: no hacking, DoS, signup-bombing or prompt-injection replies to AI spambots.
 5. **Report as the user, honestly.** Use the user's real name and contact details, and disclose that an AI agent prepared the report for them (template in `references/report-formats.md`).
-6. **Get approval once, then do the work.** Before the first send, show the user one plan for the whole batch (each layer, channel, recipient and attachment) and get a go-ahead, unless they've already authorized you to file these on your own. After that, carry out the plan without checking in on each step.
+6. **Review mode is the default.** Nothing gets filed until the user has seen a review card for each email (see below) and approved it. Auto mode applies only if the user explicitly turns it on.
+
+## Review mode (default) and auto mode
+
+**Review mode.** Analysis is read-only. Filing happens only after review. Open every review with this warning:
+
+> ⚠️ Every report goes out in your name to real abuse teams. Reporting mail you actually signed up for, or a real contact, is a false positive: it wastes their time, weakens genuine reports, and can hurt a legitimate sender. If unsure, skip it or unsubscribe instead.
+
+Then show **one card per email**, or per operation when several emails share a sending account or Reply-To. Generate it with `python3 scripts/parse-headers.py --card [--gmail-id ID] message.eml` and add the recon results. Each card shows:
+- the subject, the sender, a **link to open the original** (`--gmail-id` gives a direct Gmail link; otherwise the card uses a Gmail Message-ID search link), and a **truncated intro** of about 200 characters so the user can recognise the email at a glance;
+- what was found at each layer, and the reports you would file there;
+- the **prior-relationship evidence** (e.g. "no other mail from this domain; you never wrote to it");
+- your category call (B / C / C2 / D…) and confidence;
+- the decision options: **report / skip / unsubscribe instead**.
+
+List clearly unsolicited mail first. Put anything with inbox history, or newsletter-like signals (a retailer, a venue, a charity, a product the user may have used), in a separate **"probably subscribed: unsubscribe instead?"** list, not as report cards. Accept bulk answers ("report 1–5 and 8, skip 6, unsubscribe 7").
+
+**Auto mode,** only when the user explicitly asks for it ("file these without asking"). Even then, limit it to categories the user has approved before, high-confidence senders with no prior relationship, and platform, mailbox and blocklist channels. Never file regulator complaints or take legal steps in auto mode, and still write a card for each email to the ledger so the run can be audited.
 
 ## Triage first
 

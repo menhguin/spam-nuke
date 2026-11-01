@@ -61,7 +61,7 @@ For any other agent, put the folder where it loads skills from, or give it the l
 - **One report per channel per incident,** tracked in a ledger. Repeat offenders get escalated, not re-spammed with reports.
 - **Never engages with scams:** no replies, link clicks or callbacks. With real, identifiable companies it may send one official opt-out, because mail after that is a clean violation.
 - **Discloses that an agent prepared each report,** with your real contact details.
-- **Review mode by default.** Analysis is read-only. You get one card per email (sender, a short intro, a link to the original, what it found at each layer, the reports it would file) under a brief warning about false positives. Nothing is filed until you approve it. Auto mode applies only if you turn it on, and even then it never files regulator complaints or legal steps. Lawsuits (TCPA, California and Washington email laws) are prepared as evidence only; filing is your call.
+- **Three modes, from careful to sicko.** *Really careful:* you approve every outgoing report, word for word. *A bit careful* (default): one review card per email (sender, short intro, link to the original, what it found at each layer), with bulk replies like "report 1–5, skip 6". *Sicko mode:* you pre-authorize, and it sweeps the whole Spam folder (and new spam as it arrives), files every channel including regulators, escalates repeat offenders, caps outbound reports to protect your own mailbox, and sends you a digest. All three keep the same floor: no reports against anyone you have a relationship with, evidence-only claims, and no lawsuits filed. A trust ladder suggests moving up a level after clean runs and drops a level after any false positive.
 
 ## Contents
 

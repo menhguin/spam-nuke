@@ -60,24 +60,37 @@ If you can't reach a channel, write the filled-in draft and put it on the user's
 3. **One report per channel per incident.** Combine related messages into one report per recipient, and check the ledger first (see "Finish with a record"). Volume doesn't help: these systems aggregate across reporters, so duplicates only add noise and cost you credibility.
 4. **Don't engage with scams.** With scams, phishing and robocalls, never reply, click body links, load images, "press 9 to be removed" or call back; that only confirms a live target. The one exception is a **real, identifiable company**: there, the official opt-out (`List-Unsubscribe`, or a one-line removal request) is allowed and useful, because continued mail after 10 business days is a clear CAN-SPAM violation (see the opt-out tactic in `references/supply-chain.md`). Never retaliate beyond reporting: no hacking, DoS, signup-bombing or prompt-injection replies to AI spambots.
 5. **Report as the user, honestly.** Use the user's real name and contact details, and disclose that an AI agent prepared the report for them (template in `references/report-formats.md`).
-6. **Review mode is the default.** Nothing gets filed until the user has seen a review card for each email (see below) and approved it. Auto mode applies only if the user explicitly turns it on.
+6. **The user sets how much you decide alone.** There are three modes, really careful → a bit careful (the default) → sicko mode (see below). Analysis is always read-only. What changes between modes is when filing needs the user's OK.
 
-## Review mode (default) and auto mode
+## Modes: really careful → a bit careful → sicko mode
 
-**Review mode.** Analysis is read-only. Filing happens only after review. Open every review with this warning:
+Pick the mode from the user's words ("be careful", "just do it", "sicko mode", "go ham", "nuke everything"). If they don't say, use **a bit careful**. On a user's **first ever run** (no ledger yet), suggest **really careful** for that run.
+
+**Same in every mode:** ground rules 1–5. Check the user didn't sign up, claim only what the evidence shows, file one report per channel per incident, never engage scams, and disclose that an agent prepared each report. Never report a sender the user has a relationship with. Never file a lawsuit or send a legal threat.
+
+| | 🧐 **Really careful** | 🙂 **A bit careful** (default) | 😈 **Sicko mode** |
+|---|---|---|---|
+| **What needs the user's OK** | Every outgoing report, shown word for word | One card per email or operation; bulk replies OK ("report 1–5, skip 6") | Nothing. Pre-authorized, with a digest afterwards |
+| **Scope** | Only the emails or calls the user pointed at | Those, or a sweep of the Spam folder or voicemail | The whole Spam folder and voicemail, and new spam as it arrives if you have a scheduler |
+| **Triage** | Nothing skipped automatically; risks are flagged on the card | Prior relationship, newsletter or retail signals, or LOW confidence → "probably subscribed: unsubscribe instead?" list | Same filters. Anything that isn't high-confidence B/C/C2/D goes to a review queue, not filed |
+| **Channels** | Platform-embedded abuse links, platform or ESP abuse desk, mailbox provider, "Report spam" | + blocklists, registrar, host, Reply-To inbox provider, data-deletion requests | + regulators (spam@uce.gov, ReportFraud, FTC/FCC for calls, national regulators), SpamCop, automatic escalation for repeat offenders (state AG, second-tier providers), California DROP |
+| **Opt-out tactic** (identifiable companies) | Off | Ask per company | On for category B |
+| **Legal** | Never | Never | Prepare evidence packets for TCPA / state email laws; still never file |
+| **Volume guard** | n/a | n/a | At most ~50 outbound report emails a day from the user's account, spaced out, so their own mailbox doesn't get flagged for bulk-forwarding spam. Web forms: one per incident |
+| **Afterwards** | Ledger | Ledger | Ledger + a digest: what was filed and where, what got queued for review, what was skipped and why |
+
+**Review card** (really careful and a bit careful): run `python3 scripts/parse-headers.py --card [--gmail-id ID] message.eml` and add the recon results. Each card has:
+- subject, sender, a link to open the original, and a ~200-character intro so the user can recognise it at a glance;
+- what was found at each layer and the reports you'd file;
+- prior-relationship evidence;
+- your category call and confidence;
+- the choice: report / skip / unsubscribe instead.
+
+Group emails from the same operation (shared sending account or Reply-To) into one card. In **really careful** mode, also show the exact text of each outgoing report before it goes. Open every review with:
 
 > ⚠️ Every report goes out in your name to real abuse teams. Reporting mail you actually signed up for, or a real contact, is a false positive: it wastes their time, weakens genuine reports, and can hurt a legitimate sender. If unsure, skip it or unsubscribe instead.
 
-Then show **one card per email**, or per operation when several emails share a sending account or Reply-To. Generate it with `python3 scripts/parse-headers.py --card [--gmail-id ID] message.eml` and add the recon results. Each card shows:
-- the subject, the sender, a **link to open the original** (`--gmail-id` gives a direct Gmail link; otherwise the card uses a Gmail Message-ID search link), and a **truncated intro** of about 200 characters so the user can recognise the email at a glance;
-- what was found at each layer, and the reports you would file there;
-- the **prior-relationship evidence** (e.g. "no other mail from this domain; you never wrote to it");
-- your category call (B / C / C2 / D…) and confidence;
-- the decision options: **report / skip / unsubscribe instead**.
-
-List clearly unsolicited mail first. Put anything with inbox history, or newsletter-like signals (a retailer, a venue, a charity, a product the user may have used), in a separate **"probably subscribed: unsubscribe instead?"** list, not as report cards. Accept bulk answers ("report 1–5 and 8, skip 6, unsubscribe 7").
-
-**Auto mode,** only when the user explicitly asks for it ("file these without asking"). Even then, limit it to categories the user has approved before, high-confidence senders with no prior relationship, and platform, mailbox and blocklist channels. Never file regulator complaints or take legal steps in auto mode, and still write a card for each email to the ledger so the run can be audited.
+**Trust ladder.** Earn autonomy rather than assuming it. After a clean run, where the user approved essentially everything you proposed and flagged no false positives (~20+ cards), offer to move up one level. If the user flags a false positive, or a provider replies that a report was mistaken, drop down a level, note what went wrong in the ledger, and tighten the triage rule that let it through. Record the current level in the ledger so it persists between runs.
 
 ## Triage first
 
@@ -152,7 +165,7 @@ To support this, keep the raw `.eml` files, voicemail audio, call-log screenshot
 
 ## Finish with a record
 
-Keep a **ledger** that persists across incidents (e.g. `spam-nuke-ledger.csv` in the user's notes or your workspace). Columns: date, sender identifiers (sending domain, brand domain, phone number, seller), layer, channel, what was filed, confirmation or ticket number, status, and opt-out date. Before filing, check it:
+Keep a **ledger** that persists across incidents (e.g. `spam-nuke-ledger.csv` in the user's notes or your workspace). Columns: date, mode, sender identifiers (sending domain, brand domain, phone number, seller), layer, channel, what was filed, confirmation or ticket number, status, opt-out date, and user decision (approved / skipped / unsubscribed / flagged false positive). The decision column is what the trust ladder reads. Before filing, check it:
 - **Same incident already reported:** don't refile.
 - **Same sender again after earlier reports or an opt-out:** escalate. Cite the earlier report dates and the opt-out, add the state AG or a provider you skipped, and follow up on open tickets. A documented repeat offender is much stronger evidence than a first-time one.
 

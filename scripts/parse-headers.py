@@ -59,6 +59,21 @@ ESP_SIGNATURES = {
                      "Alibaba Cloud Reporting Center / Abuse Claim Form (DirectMail policy bans unsolicited email; "
                      "third-party complaints can permanently ban the account)"),
     ".263.net": ("Net263 hosted mail (China)", "abuse@link263.com (per a 263 reseller page; verify)"),
+    "exacttarget.com": ("Salesforce Marketing Cloud", "https://security.salesforce.com/report-concern-form (Platform Abuse → Unsolicited Commercial Emails)"),
+    "pardot.com": ("Salesforce Pardot / Account Engagement", "https://security.salesforce.com/report-concern-form (Platform Abuse → Unsolicited Commercial Emails)"),
+    "elasticemail.com": ("Elastic Email", "https://elasticemail.com/report-spam"),
+    "rsgsv.net": ("Mailchimp", "abuse@mailchimp.com"),
+}
+
+# Freemail / hosted inboxes used as Reply-To → where to report the address
+FREEMAIL_ABUSE = {
+    "gmail.com": "https://support.google.com/mail/contact/abuse",
+    "googlemail.com": "https://support.google.com/mail/contact/abuse",
+    "outlook.com": "abuse@outlook.com", "hotmail.com": "abuse@outlook.com",
+    "live.com": "abuse@outlook.com", "msn.com": "abuse@outlook.com",
+    "tutamail.com": "abuse@tutao.de", "tutanota.com": "abuse@tutao.de", "tuta.io": "abuse@tutao.de",
+    "tuta.com": "abuse@tutao.de",
+    "qq.com": "spam@qq.com (Tencent's spam-report inbox)",
 }
 
 # Sending-server hostname (from the trusted hop) → provider
@@ -73,6 +88,9 @@ SENDING_SERVER_PATTERNS = [
     (r"\.mcsv\.net$|\.mcdlv\.net$", "Mailchimp"),
     (r"\.sparkpostmail\.com$", "SparkPost"),
     (r"\.zoho\.com$|\.zohomail\.com$", "Zoho Mail"),
+    (r"\.exacttarget\.com$", "Salesforce Marketing Cloud"),
+    (r"\.rsgsv\.net$", "Mailchimp"),
+    (r"elasticemail", "Elastic Email"),
 ]
 
 # Platforms abused to HOST payloads (phishing pages, redirectors). Not the spammer's brand:
@@ -118,6 +136,8 @@ SEQUENCER_CNAME_TARGETS = {
     "custom.lemlist.com": ("lemlist", "support@lemlist.com"),
     "sendgrid.net": ("SendGrid", "abuse@sendgrid.com"),
     "mailgun.org": ("Mailgun", "abuse@mailgun.com"),
+    "go.pardot.com": ("Salesforce Pardot / Account Engagement", "https://security.salesforce.com/report-concern-form (Platform Abuse → Unsolicited Commercial Emails)"),
+    "api.elasticemail.com": ("Elastic Email", "https://elasticemail.com/report-spam"),
 }
 # Shared (non-custom) tracking hosts that name the platform directly.
 SEQUENCER_HOST_PATTERNS = {
@@ -690,6 +710,9 @@ def format_report(info: dict) -> str:
         lines.append("  Rotating sending domains + a stable Reply-To = the Reply-To inbox/domain is the operation's")
         lines.append("  persistent asset. Run recon.sh on it, include it in blocklist reports, and if it's a")
         lines.append("  freemail/hosted inbox (qq.com, gmail.com, …), report the address to that provider.")
+        _rtd = info.get("reply_to_domain", "")
+        if _rtd in FREEMAIL_ABUSE:
+            lines.append(f"  ✓ Freemail inbox → report the address to: {FREEMAIL_ABUSE[_rtd]}")
         lines.append("")
 
     if info.get("abused_hosting"):

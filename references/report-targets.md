@@ -18,6 +18,17 @@ Sending platforms often embed their own abuse channel in the message. These are 
 | `X-AntiAbuse` | cPanel/Exim shared hosting | Server hostname, account UID/GID, sender domain: quote verbatim to the host |
 | `Feedback-ID` / `X-Feedback-Id` | Amazon SES, Alibaba DirectMail, Mailgun, … | Identifies the sending account/campaign at the platform: include it in the platform report |
 
+## Freemail Reply-To Inboxes (the operation's persistent inbox)
+
+When replies go to a free mailbox, that inbox is often the one asset the operation can't rotate. Report the address to its provider:
+
+| Provider | Report to |
+|---|---|
+| Gmail | https://support.google.com/mail/contact/abuse |
+| Outlook / Hotmail / Live | abuse@outlook.com |
+| Tuta (tutamail.com, tutanota.com, tuta.io) | abuse@tutao.de (per tuta.com/support) |
+| QQ Mail (Tencent) | spam@qq.com (Tencent's spam-report inbox) |
+
 ## Mailbox Providers (where most cold email actually comes from)
 
 Modern cold email is sent from Google Workspace / Microsoft 365 seats on lookalike domains, not from an ESP. `parse-headers.py` and `recon.sh` (MX) detect this.
@@ -93,6 +104,8 @@ Report with full email headers attached. ESPs send many customers' mail from sha
 | **Mailshake** | support@mailshake.com | Cold outreach tool |
 | **Alibaba Cloud DirectMail** | Alibaba Cloud Reporting Center / Abuse Claim Form (linked from alibabacloud.com's legal/DSA page) | Sending host `*.dm.aliyun.com`; unsubscribe/tracking `dm-*.aliyuncs.com`. Policy bans unsolicited mail incl. cold outreach; third-party complaints can permanently ban the account |
 | **Net263 hosted mail (China)** | abuse@link263.com (per a 263 reseller page; verify) | Sending host `*.263.net`; SPF `include:spf.263.net`, MX `mx.263.net` |
+| **Salesforce Marketing Cloud / Pardot** | https://security.salesforce.com/report-concern-form (Platform Abuse → Unsolicited Commercial Emails) | Sending host `*.exacttarget.com`; Pardot tracking CNAME → `go.pardot.com`. Anti-spam policy bans purchased/harvested lists |
+| **Elastic Email** | https://elasticemail.com/report-spam | Tracking CNAME → `api.elasticemail.com`. AUP requires double opt-in; complaint rate over 0.1% triggers review |
 
 ## Blocklists & Spam Databases
 

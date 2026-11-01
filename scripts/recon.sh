@@ -20,7 +20,7 @@ echo ""
 echo "## WHOIS / Registrar"
 echo "---"
 if command -v whois >/dev/null 2>&1; then
-    WHOIS_OUT=$(whois "$DOMAIN" 2>/dev/null | tr -d '\r' || true)
+    WHOIS_OUT=$(whois "$DOMAIN" 2>/dev/null | LC_ALL=C tr -d '\r' || true)
     REGISTRAR=$(printf '%s\n' "$WHOIS_OUT" | grep -i "^ *registrar:" | head -1 | sed 's/^[^:]*: *//')
     ABUSE_EMAIL=$(printf '%s\n' "$WHOIS_OUT" | grep -i "abuse.*email" | head -1 | sed 's/^[^:]*: *//')
     ABUSE_PHONE=$(printf '%s\n' "$WHOIS_OUT" | grep -i "abuse.*phone" | head -1 | sed 's/^[^:]*: *//')
@@ -54,9 +54,9 @@ A_RECORDS=$(dig +short A "$DOMAIN" 2>/dev/null | grep -E '^[0-9.]+$' || true)
 echo "${A_RECORDS:-[none]}"
 if [ -n "$A_RECORDS" ] && command -v whois >/dev/null 2>&1; then
     FIRST_IP=$(printf '%s\n' "$A_RECORDS" | head -1)
-    IP_WHOIS=$(whois "$FIRST_IP" 2>/dev/null | tr -d '\r' || true)
-    IP_ORG=$(printf '%s\n' "$IP_WHOIS" | grep -i "^ *\(orgname\|org-name\|netname\|descr\)" | head -2 | sed 's/^[^:]*: *//' | tr '\n' ' ')
-    IP_ABUSE=$(printf '%s\n' "$IP_WHOIS" | grep -i "abuse" | grep -oE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' | head -1)
+    IP_WHOIS=$(whois "$FIRST_IP" 2>/dev/null | LC_ALL=C tr -d '\r' || true)
+    IP_ORG=$(printf '%s\n' "$IP_WHOIS" | LC_ALL=C grep -i "^ *\(orgname\|org-name\|netname\|descr\)" | head -2 | sed 's/^[^:]*: *//' | tr '\n' ' ')
+    IP_ABUSE=$(printf '%s\n' "$IP_WHOIS" | LC_ALL=C grep -i "abuse" | LC_ALL=C grep -oE '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' | head -1)
     echo "IP Owner: ${IP_ORG:-[not found]}"
     echo "IP Abuse Contact: ${IP_ABUSE:-[not found]}"
 fi

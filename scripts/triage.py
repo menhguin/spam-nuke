@@ -187,7 +187,7 @@ def main():
         ch = channels(inf)
         ch_txt = ", ".join(ch[:4]) + (f" +{len(ch) - 4}" if len(ch) > 4 else "")
         link = f" · [open]({x['link']})" if x["link"] else ""
-        print(f"**{n}. {x['cat']}** ({x['score']}) · {sender} <{dom}> · *{subj}*{link}")
+        print(f"**{n}. {x['cat']}** ({x['score']}) · {sender} ({dom}) · *{subj}*{link}")
         print(f"   {reasons}. → {ch_txt}")
     print(f"\n**I'll report all {len(chunk)} unless you say otherwise:** reply `skip 3 7`, `unsub 5` (you signed up), "
           f"`details 2` (full card), or `stop`. Anything else, e.g. `go`, means report the rest"
